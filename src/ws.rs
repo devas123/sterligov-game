@@ -34,29 +34,38 @@ pub async fn client_connection(ws: WebSocket, id: String, user_id: usize, rooms:
         room.players.push(player);
         rooms.write().unwrap().insert(id.clone(), room);
 
-        println!("{} connected", id);
+        println!("User with id {} connected to room {}", user_id, id);
 
         while let Some(result) = player_ws_receiver.next().await {
             let msg = match result {
                 Ok(msg) => msg,
                 Err(e) => {
-                    eprintln!("error receiving ws message for id: {}): {}", id.clone(), e);
+                    eprintln!("Error receiving ws message for id: {}): {}", id.clone(), e);
                     break;
                 }
             };
             client_msg(&id, msg, &rooms).await;
         }
 
-        rooms.write().unwrap().remove(&id);
-        println!("{} disconnected", id);
+        let new_room = rooms.write().unwrap().get(&id).unwrap().remove_player(user_id);
+        match new_room {
+            Some(rh) => {
+                println!("User {} disconnected from room {}", user_id, id);
+                rooms.write().unwrap().insert(id.clone(), rh);
+            }
+            None => {
+                println!("Room {} has no members left, so it is removed", id);
+                rooms.write().unwrap().remove(&id);
+            }
+        }
     }
 }
 
 async fn client_msg(id: &str, msg: Message, rooms: &RoomList) {
-    println!("received message from {}: {:?}", id, msg);
+    println!("Received message from {}: {:?}", id, msg);
     let message = match msg.to_str() {
         Ok(v) => v,
-        Err(_) => return,
+        Err(_) => return
     };
 
     if message == "ping" || message == "ping\n" {
@@ -66,7 +75,7 @@ async fn client_msg(id: &str, msg: Message, rooms: &RoomList) {
     let topics_req: TopicsRequest = match from_str(&message) {
         Ok(v) => v,
         Err(e) => {
-            eprintln!("error while parsing message to topics request: {}", e);
+            eprintln!("Error while parsing message to topics request: {}", e);
             return;
         }
     };
