@@ -18,7 +18,7 @@ pub async fn client_connection(ws: WebSocket, id: String, user_id: usize, rooms:
 
     tokio::task::spawn(player_receiver.forward(player_ws_sender).map(|result| {
         if let Err(e) = result {
-            eprintln!("error sending websocket msg: {}", e);
+            eprintln!("Error sending websocket msg: {}", e);
         }
     }));
 
@@ -26,6 +26,8 @@ pub async fn client_connection(ws: WebSocket, id: String, user_id: usize, rooms:
         eprintln!("Room full");
     } else if room.players.iter().any(|x| { x.user_id == user_id }) {
         eprintln!("User already in the room.");
+    } else if room.game_started {
+        eprintln!("Game is already started.");
     } else {
         let player = Player {
             sender: Some(player_sender),
