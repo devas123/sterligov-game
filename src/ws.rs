@@ -12,6 +12,7 @@ pub struct TopicsRequest {
     mv: String
 }
 
+//TODO: we have thread per connection here, maybe use queues/dispatching thread
 pub async fn client_connection(ws: WebSocket, id: String, user_id: usize, rooms: RoomList, mut room: RoomHandle) {
     let (player_ws_sender, mut player_ws_receiver) = ws.split();
     let (player_sender, player_receiver) = mpsc::unbounded_channel();
@@ -25,13 +26,15 @@ pub async fn client_connection(ws: WebSocket, id: String, user_id: usize, rooms:
     if room.players.len() > 5 {
         eprintln!("Room full");
     } else if room.players.iter().any(|x| { x.user_id == user_id }) {
-        eprintln!("User already in the room.");
+        println!("User already in the room.");
     } else if room.game_started {
         eprintln!("Game is already started.");
     } else {
         let player = Player {
             sender: Some(player_sender),
             user_id,
+            color: None,
+            name: None
         };
         room.players.push(player);
         rooms.write().unwrap().insert(id.clone(), room);

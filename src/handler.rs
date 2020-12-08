@@ -4,10 +4,9 @@ use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use warp::{Buf, Rejection, Reply};
+use warp::{Rejection, Reply};
 use warp::filters::ws::Message;
 use warp::hyper::StatusCode;
-use warp::hyper::body::Bytes;
 use warp::reply::json;
 
 use crate::{HOST, PORT, Result, RoomHandle, RoomList, ws, UserTokens};
@@ -24,11 +23,10 @@ pub struct CreateRoomRequest {
     room_name: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct PublishToARoomRequest {
-    room_id: String,
-    //TODO: move description
-    message: String,
+    path: Vec<(usize, usize)>,
+    calculate_path: bool
 }
 
 #[derive(Serialize, Debug)]
@@ -80,11 +78,10 @@ pub async fn get_rooms_handler(rooms: RoomList) -> Result<impl Reply> {
     Ok(json(&r))
 }
 
-pub async fn publish_to_room_handler(room_id: String, body: Bytes, rooms: RoomList, user_id_opt: Option<usize>) -> Result<impl Reply> {
+pub async fn publish_to_room_handler(room_id: String, body: PublishToARoomRequest, rooms: RoomList, user_id_opt: Option<usize>) -> Result<impl Reply> {
     match user_id_opt {
         Some(user_id) => {
-            let message = String::from_utf8(body.bytes().to_vec()).unwrap();
-            publish_to_room(room_id.clone(), user_id.clone(), rooms, message).await;
+            publish_to_room(room_id.clone(), user_id.clone(), rooms, body).await;
             Ok(StatusCode::OK)
         }
         None => Err(warp::reject::custom(UserNotFound))
@@ -168,12 +165,13 @@ async fn create_room(room_id: String, user_id: usize, room_name: String, rooms: 
             game_started: false,
             game_finished: false,
             created_time: Instant::now(),
+            game_state: None
         });
 }
 
-async fn publish_to_room(room_id: String, user_id: usize, rooms: RoomList, message: String) {
+async fn publish_to_room(room_id: String, user_id: usize, rooms: RoomList, request: PublishToARoomRequest) {
     let mut message_sent = false;
-    println!("publish to room: {}, user_id: {}, message: {}", room_id, user_id, message);
+    println!("publish to room: {}, user_id: {}, message: {:?}", room_id, user_id, request);
     if let Some(r) = rooms.clone().read().unwrap().get(&room_id) {
         println!("Found the room: {}, created_by {} at {:?}", r.name, r.created_by, r.created_time);
         for (ind, player) in r.players.iter().enumerate() {
@@ -182,7 +180,7 @@ async fn publish_to_room(room_id: String, user_id: usize, rooms: RoomList, messa
                 println!("Player {} can make a move.", ind);
                 for x in &r.players {
                     if let Some(sender) = &x.sender {
-                        if let Err(x) = sender.send(Ok(Message::text(message.clone()))) {
+                        if let Err(x) = sender.send(Ok(Message::text("later"))) {
                             println!("Error while sending to player: {}", x);
                         };
                         message_sent = true;
