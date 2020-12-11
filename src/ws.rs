@@ -33,7 +33,7 @@ pub async fn client_connection(ws: WebSocket, id: String, user_id: usize, rooms:
         let player = Player {
             sender: Some(player_sender),
             user_id,
-            color: None,
+            color: Some(room.players.len() + 1),
             name: None
         };
         room.players.push(player);

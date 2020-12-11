@@ -1,4 +1,6 @@
 use std::collections::{HashMap, HashSet};
+use serde::{Deserialize, Serialize, Serializer};
+use serde::ser::{SerializeMap};
 
 const NEUTRAL: usize = 0;
 const PURPLE: usize = 1;
@@ -8,13 +10,45 @@ const YELLOW: usize = 4;
 const RED: usize = 5;
 const BLUE: usize = 6;
 const POINT_COUNTS: [usize; 21] = [1, 2, 3, 4, 5, 16, 15, 14, 13, 12, 11, 12, 13, 14, 15, 16, 5, 4, 3, 2, 1];
+const POINTS: &'static [&'static[usize]] = &[
+    &[PURPLE],
+    &[PURPLE, PURPLE],
+    &[PURPLE, PURPLE, PURPLE],
+    &[PURPLE, PURPLE, PURPLE, PURPLE],
+    &[PURPLE, PURPLE, PURPLE, PURPLE, PURPLE],
+    &[BLUE, BLUE, BLUE, BLUE, BLUE, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, GREEN, GREEN, GREEN, GREEN, GREEN],
+    &[BLUE, BLUE, BLUE, BLUE, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, GREEN, GREEN, GREEN, GREEN],
+    &[BLUE, BLUE, BLUE, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, GREEN, GREEN, GREEN],
+    &[BLUE, BLUE, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, GREEN, GREEN],
+    &[BLUE, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, GREEN],
+    &[NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL],
+    &[RED, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, ORANGE],
+    &[RED, RED, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, ORANGE, ORANGE],
+    &[RED, RED, RED, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, ORANGE, ORANGE, ORANGE],
+    &[RED, RED, RED, RED, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, ORANGE, ORANGE, ORANGE, ORANGE],
+    &[RED, RED, RED, RED, RED, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, ORANGE, ORANGE, ORANGE, ORANGE, ORANGE],
+    &[YELLOW, YELLOW, YELLOW, YELLOW, YELLOW],
+    &[YELLOW, YELLOW, YELLOW, YELLOW],
+    &[YELLOW, YELLOW, YELLOW],
+    &[YELLOW, YELLOW],
+    &[YELLOW]
+];
 
 //180 places in total.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameState {
-    pub board: Vec<Vec<usize>>,
+    #[serde(serialize_with = "serialize_cones")]
     pub cones: HashMap<(usize, usize), usize>, //(row, position, user_id)
 }
+
+pub fn serialize_cones<S>(cones: &HashMap<(usize, usize), usize>, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    let mut map = serializer.serialize_map(Some(cones.len()))?;
+    for ((row, col), v) in cones {
+        map.serialize_entry(format!("{},{}",*row, *col).as_str(), v)?;
+    }
+    map.end()
+}
+
 
 impl GameState {
     pub fn validate_dimensions(&self, row: i32, position: i32) -> std::result::Result<(usize, usize), usize> {
@@ -141,36 +175,22 @@ impl GameState {
     }
 
     pub fn new() -> GameState {
-        let points = vec![
-            vec![PURPLE],
-            vec![PURPLE, PURPLE],
-            vec![PURPLE, PURPLE, PURPLE],
-            vec![PURPLE, PURPLE, PURPLE, PURPLE],
-            vec![PURPLE, PURPLE, PURPLE, PURPLE, PURPLE],
-            vec![BLUE, BLUE, BLUE, BLUE, BLUE, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, GREEN, GREEN, GREEN, GREEN, GREEN],
-            vec![BLUE, BLUE, BLUE, BLUE, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, GREEN, GREEN, GREEN, GREEN],
-            vec![BLUE, BLUE, BLUE, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, GREEN, GREEN, GREEN],
-            vec![BLUE, BLUE, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, GREEN, GREEN],
-            vec![BLUE, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, GREEN],
-            vec![NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL],
-            vec![RED, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, ORANGE],
-            vec![RED, RED, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, ORANGE, ORANGE],
-            vec![RED, RED, RED, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, ORANGE, ORANGE, ORANGE],
-            vec![RED, RED, RED, RED, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, ORANGE, ORANGE, ORANGE, ORANGE],
-            vec![RED, RED, RED, RED, RED, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, NEUTRAL, ORANGE, ORANGE, ORANGE, ORANGE, ORANGE],
-            vec![YELLOW, YELLOW, YELLOW, YELLOW, YELLOW],
-            vec![YELLOW, YELLOW, YELLOW, YELLOW],
-            vec![YELLOW, YELLOW, YELLOW],
-            vec![YELLOW, YELLOW],
-            vec![YELLOW]
-        ];
+        let mut cones = HashMap::new();
 
-        for (ind, x) in points.iter().enumerate() {
+
+        for (row, cols) in POINTS.iter().enumerate() {
+            for (col, color) in cols.iter().enumerate() {
+                if *color != NEUTRAL {
+                    cones.insert((row, col), *color);
+                }
+            }
+        }
+
+        for (ind, x) in POINTS.iter().enumerate() {
             assert_eq!(x.len(), POINT_COUNTS[ind]);
         }
         GameState {
-            board: points,
-            cones: HashMap::new(),
+            cones
         }
     }
 }

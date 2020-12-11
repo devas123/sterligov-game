@@ -9,6 +9,9 @@ use tokio::sync::mpsc;
 use uuid::Uuid;
 use warp::{Filter, Rejection, ws::Message};
 use crate::game::GameState;
+use std::env;
+use serde::{Serialize};
+
 
 mod handler;
 mod ws;
@@ -66,6 +69,13 @@ pub struct Player {
     pub sender: Option<mpsc::UnboundedSender<std::result::Result<Message, warp::Error>>>,
 }
 
+#[derive(Serialize)]
+pub struct TokenCreatedResponse {
+    pub token: String,
+    #[serde(with = "serde_millis")]
+    pub created_at: Instant
+}
+
 
 type Result<T> = std::result::Result<T, Rejection>;
 type RoomList = Arc<RwLock<HashMap<String, RoomHandle>>>;
@@ -73,19 +83,31 @@ type UserTokens = Arc<RwLock<LruCache<String, usize>>>;
 
 #[tokio::main]
 async fn main() {
+    env::set_var("RUST_LOG", "debug");
+    env_logger::init();
     let rooms: RoomList = Arc::new(RwLock::new(HashMap::new()));
     let users_count = Arc::new(AtomicUsize::new(0));
     let time_to_live = ::std::time::Duration::from_secs(3600 * 24);
     let users: UserTokens = Arc::new(RwLock::new(LruCache::<String, usize>::with_expiry_duration(time_to_live)));
     let health_route = warp::path!("health").and_then(handler::health_handler);
     let cloned_users = users.clone();
+    let get_players = warp::path("players")
+        .and(warp::get())
+        .and(warp::query())
+        .and(with_rooms(rooms.clone()))
+        .and_then(handler::get_players);
+    let game_state = warp::path("game-state")
+        .and(warp::get())
+        .and(warp::query())
+        .and(with_rooms(rooms.clone()))
+        .and_then(handler::get_game_state);
     let add_user = warp::path("add")
         .and(warp::post())
         .map(move || {
             let token = Uuid::new_v4().hyphenated().to_string();
             let new_id = users_count.clone().fetch_add(1, Ordering::Relaxed);
             cloned_users.write().unwrap().insert(token.clone(), new_id.clone());
-            warp::reply::json(&token)
+            warp::reply::json(&TokenCreatedResponse { token, created_at: Instant::now() })
         });
     let refresh_token = warp::path("refresh")
         .and(warp::post())
@@ -93,14 +115,15 @@ async fn main() {
         .and(with_users(users.clone()))
         .and_then(handler::refresh_token_handle);
 
-    let register = warp::path("room");
+    let room = warp::path("room");
     let publish = warp::path("publish");
-    let room_handle_routes = register
+    let room_handle_routes = room
         .and(warp::post())
+        .and(with_userid(users.clone()))
         .and(warp::body::json())
         .and(with_rooms(rooms.clone()))
         .and_then(handler::create_room_handler)
-        .or(register
+        .or(room
             .and(warp::get())
             .and(with_rooms(rooms.clone()))
             .and_then(handler::get_rooms_handler));
@@ -124,16 +147,32 @@ async fn main() {
     //     .and(warp::body::json())
     //     .and(with_rooms(rooms.clone()))
     //     .and_then(handler::publish_handler);
-
+    let cors = warp::cors()
+        .allow_any_origin()
+        .allow_methods(vec!["POST", "GET", "DELETE", "OPTIONS"])
+        .allow_headers(vec!["content-type",
+                            USER_TOKEN_HEADER,
+            "Content-Length",
+            "Sec-Fetch-Dest",
+            "Sec-Fetch-Mode",
+            "Sec-Fetch-Site"
+        ]);
     let routes = health_route
         .or(room_handle_routes)
         .or(ws_route)
         .or(publish_routes)
         .or(add_user)
+        .or(get_players)
+        .or(game_state)
         .or(refresh_token)
         // .or(publish)
-        .with(warp::cors().allow_any_origin())
-        .recover(handler::handle_rejection);
+        .with(cors)
+        .recover(handler::handle_rejection)
+        .map(|reply| {
+            warp::reply::with_header(reply, "Access-Control-Allow-Origin", "*")
+        })
+        .with(warp::log::log("tests"));
+
 
     warp::serve(routes).run(([127, 0, 0, 1], PORT as u16)).await;
 }
