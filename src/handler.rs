@@ -2,17 +2,17 @@ use std::convert::Infallible;
 use std::error::Error;
 use std::time::Instant;
 
+use log::{error, info};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use warp::{Rejection, Reply};
+use warp::filters::cors::CorsForbidden;
 use warp::filters::ws::Message;
 use warp::hyper::StatusCode;
 use warp::reply::json;
-use log::{error, info};
 
-use crate::{HOST, PORT, Result, RoomHandle, RoomList, ws, UserTokens, Player, TokenCreatedResponse};
+use crate::{HOST, Player, PORT, Result, RoomHandle, RoomList, TokenCreatedResponse, UserTokens, ws};
 use crate::game::GameState;
-use warp::filters::cors::CorsForbidden;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct JoinRoomRequest {
@@ -27,7 +27,7 @@ pub struct CreateRoomRequest {
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct PublishToARoomRequest {
-    path: Vec<(usize, usize)>,
+    path: Vec<Vec<i32>>,
     calculate_path: bool
 }
 
@@ -63,7 +63,8 @@ struct ErrorMessage {
 #[derive(Serialize)]
 struct PlayerDesc {
     name: String,
-    color: usize
+    color: usize,
+    user_id: usize
 }
 
 #[derive(Deserialize)]
@@ -76,8 +77,9 @@ impl warp::reject::Reject for UserNotFound {}
 impl PlayerDesc {
     fn from_player(p: &Player) -> PlayerDesc {
         PlayerDesc {
-            name: p.name.as_ref().cloned().or_else(|| {Some("Player".to_string())}).unwrap(),
-            color: p.color.unwrap()
+            name: p.name.as_ref().cloned().or_else(|| { Some("Player".to_string()) }).unwrap(),
+            color: p.color.unwrap(),
+            user_id: p.user_id
         }
     }
 }
@@ -162,14 +164,15 @@ pub async fn handle_rejection(err: Rejection) -> std::result::Result<impl Reply,
 pub async fn create_room_handler(user_id_opt: Option<usize>, body: CreateRoomRequest, rooms: RoomList) -> Result<impl Reply> {
     let user_id = match user_id_opt {
         None => {
-            return Err(warp::reject::reject())
+            return Err(warp::reject::reject());
         }
         Some(id) => { id }
     };
     let room_name = body.room_name;
     let room_id = Uuid::new_v4().simple().to_string();
     create_room(room_id.clone(), user_id.clone(), room_name, rooms).await;
-    Ok(json(&CreateRoomResponse { room_id: room_id.clone(),
+    Ok(json(&CreateRoomResponse {
+        room_id: room_id.clone(),
         url: format!("ws://{}:{}/ws/{}/{}", HOST, PORT, room_id.clone(), user_id),
         url_sockjs: format!("http://{}:{}/ws/{}/{}", HOST, PORT, room_id.clone(), user_id),
     }))
@@ -178,17 +181,34 @@ pub async fn create_room_handler(user_id_opt: Option<usize>, body: CreateRoomReq
 pub async fn get_players(query: RoomIdParameter, rooms: RoomList) -> Result<impl Reply> {
     let room_id = query.room_id;
     rooms.read().unwrap().get(&room_id)
-        .map(|room| {room.players.iter().map(|player| { PlayerDesc::from_player(player)}).collect()})
+        .map(|room| { room.players.iter().map(|player| { PlayerDesc::from_player(player) }).collect() })
         .map(|players: Vec<PlayerDesc>| { json(&players) })
         .ok_or(warp::reject::reject())
+}
+
+pub async fn validate_path(room_id: String, rooms: RoomList, _userid: Option<usize>, body: Vec<Vec<i32>>) -> Result<impl Reply> {
+    let transformed: Vec<(i32, i32)> = body.iter().map(|x| { (x[0], x[1]) }).collect();
+    if let Some(result) = rooms.read().unwrap().get(&room_id)
+        .map(|room| { room.game_state.as_ref().map(|gs| {
+            gs.validate_path(&transformed)
+                .map_err(|_e| {
+                    error!("Path invalid: {:?}", transformed);
+                    warp::reject()
+                }) }) })
+        .flatten() {
+        result.map(|x| { if x { Ok(StatusCode::OK) } else { Ok(StatusCode::NOT_ACCEPTABLE) } })
+    } else {
+        error!("Path invalid: {:?}", transformed);
+        Err(warp::reject())
+    }
 }
 
 pub async fn get_game_state(query: RoomIdParameter, rooms: RoomList) -> Result<impl Reply> {
     let room_id = query.room_id;
     rooms.read().unwrap().get(&room_id)
-        .map(|room| {room.game_state.as_ref()})
+        .map(|room| { room.game_state.as_ref() })
         .flatten()
-        .map(|ogs| { json(ogs)} )
+        .map(|ogs| { json(ogs) })
         .ok_or(warp::reject::reject())
 }
 
@@ -222,34 +242,37 @@ async fn create_room(room_id: String, user_id: usize, room_name: String, rooms: 
 }
 
 async fn publish_to_room(room_id: String, user_id: usize, rooms: RoomList, request: PublishToARoomRequest) {
-    let mut message_sent = false;
     info!("publish to room: {}, user_id: {}, message: {:?}", room_id, user_id, request);
+    let transformed: Vec<(i32, i32)> = request.path.iter().map(|v| { (v[0], v[1]) }).collect();
     if let Some(r) = rooms.clone().read().unwrap().get(&room_id) {
         info!("Found the room: {}, created_by {} at {:?}", r.name, r.created_by, r.created_time);
         for (ind, player) in r.players.iter().enumerate() {
             info!("Looking at player {}, current turn is: {}", ind, r.active_player);
             if user_id == player.user_id && ind == r.active_player {
                 info!("Player {} can make a move.", ind);
-                for x in &r.players {
-                    if let Some(sender) = &x.sender {
-                        if let Err(x) = sender.send(Ok(Message::text("later"))) {
-                            info!("Error while sending to player: {}", x);
-                        };
-                        message_sent = true;
-                    }
+                if let Err(msg) = r.make_a_move(transformed, user_id)
+                    .map(|(update, room_handle)| {
+                        for x in &r.players {
+                            if let Some(sender) = &x.sender {
+                                let msg = serde_json::ser::to_string(&update.clone()).map(Message::text).unwrap();
+                                if let Err(x) = sender.send(Ok(msg)) {
+                                    info!("Error while sending to player: {}", x);
+                                };
+                                info!("Message sent, taking turns.");
+                                match rooms.try_write() {
+                                    Ok(mut result) => {
+                                        result.insert(room_id.clone(), room_handle.clone());
+                                    }
+                                    Err(err) => {
+                                        info!("Error while acquiring the lock: {}", err)
+                                    }
+                                }
+                            }
+                        }
+                    }) {
+                    error!("Error while making a move. {}", msg)
                 }
                 break;
-            }
-        }
-        if message_sent {
-            info!("Message sent, taking turns.");
-            match rooms.try_write() {
-                Ok(mut result) => {
-                    result.insert(room_id.clone(), r.incr_active_player());
-                }
-                Err(err) => {
-                    info!("Error while acquiring the lock: {}", err)
-                }
             }
         }
     }
