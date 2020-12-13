@@ -82,7 +82,7 @@ impl RoomHandle {
     pub fn make_a_move(&self, path: Vec<(i32, i32)>, user_id: usize) -> std::result::Result<(RoomUpdate, RoomHandle), usize> {
         let mut rh = self.clone();
         if let Some(gs) = rh.game_state.as_mut() {
-            let next = rh.active_player + 1;
+            let next = (rh.active_player + 1) % rh.players.len();
             let p = (path[0].0 as usize, path[0].1 as usize);
             if *gs.cones.get(&p).unwrap() == user_id {
                 let update = gs.update_cones(path.clone())

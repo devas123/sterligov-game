@@ -61,7 +61,7 @@ impl GameState {
         for (row, cols) in POINTS.iter().enumerate() {
             for (col, color) in cols.iter().enumerate() {
                 if *color == color_number {
-                    gs.cones.insert((row, col), user_id);
+                    gs.add_cone(row as i32, col as i32, user_id)?;
                 }
             }
         }
@@ -110,6 +110,12 @@ impl GameState {
             return Err(0);
         }
         self.cones.insert((r, c).clone(), color.clone());
+        Ok(true)
+    }
+
+    pub fn remove_cone(&mut self, row: i32, col: i32) -> std::result::Result<bool, usize> {
+        let (r, c) = self.validate_dimensions(row, col)?;
+        self.cones.remove(&(r, c));
         Ok(true)
     }
 
@@ -291,8 +297,11 @@ mod tests {
 
     #[test]
     fn test_validate_path_regression() {
-        let game_state = GameState::new().add_cones_for_color(PURPLE, 123).unwrap();
-        assert!(game_state.validate_path(&vec![(3, 3), (5, 10)]).is_ok());
+        let mut  game_state = GameState::new().add_cones_for_color(PURPLE, 123).unwrap();
+        game_state.remove_cone(3, 3).unwrap();
+        game_state.add_cone(6, 10, PURPLE).unwrap();
+
+        assert!(game_state.validate_path(&vec![(1, 1), (3,3 ), (5, 10), (7, 10)]).is_ok());
     }
 
     #[test]
@@ -301,12 +310,20 @@ mod tests {
         assert_eq!(Ok(HashSet::from_iter(vec![(1, 0), (1, 1)].into_iter())), game_state.get_neighbors(0, 0));
         assert_eq!(Ok(HashSet::from_iter(vec![(12, 6), (12, 8), (11, 7), (11, 6), (13, 7), (13, 8)].into_iter())), game_state.get_neighbors(12, 7));
         assert_eq!(Ok(HashSet::from_iter(vec![(5, 1), (6, 0)].into_iter())), game_state.get_neighbors(5, 0));
+        assert_eq!(Ok(HashSet::from_iter(vec![(5, 14), (6, 14)].into_iter())), game_state.get_neighbors(5, 15));
         assert_eq!(Ok(HashSet::from_iter(vec![(5, 4), (5, 6), (4, 0), (6, 5), (6, 4)].into_iter())), game_state.get_neighbors(5, 5));
+        assert_eq!(Ok(HashSet::from_iter(vec![(5, 8), (5, 6), (4, 2), (4, 1), (6, 6), (6, 7)].into_iter())), game_state.get_neighbors(5, 7));
         assert_eq!(Ok(HashSet::from_iter(vec![(3, 3), (4, 3), (5, 9), (5, 10)].into_iter())), game_state.get_neighbors(4, 4));
         assert_eq!(Ok(HashSet::from_iter(vec![(3, 0), (3, 1), (4, 0), (4, 2), (5, 6), (5, 7)].into_iter())), game_state.get_neighbors(4, 1));
         assert_eq!(Ok(HashSet::from_iter(vec![(3, 2), (3, 3), (4, 2), (4, 4), (5, 9), (5, 8)].into_iter())), game_state.get_neighbors(4, 3));
         assert_eq!(Ok(HashSet::from_iter(vec![(14, 4), (14, 5), (15, 4), (15, 6), (16, 0)].into_iter())), game_state.get_neighbors(15, 5));
         assert_eq!(Ok(HashSet::from_iter(vec![(14, 9), (14, 10), (15, 9), (15, 11), (16, 4)].into_iter())), game_state.get_neighbors(15, 10));
+        assert_eq!(Ok(HashSet::from_iter(vec![(15, 1), (14, 0)].into_iter())), game_state.get_neighbors(15, 0));
+        assert_eq!(Ok(HashSet::from_iter(vec![(15, 14), (14, 14)].into_iter())), game_state.get_neighbors(15, 15));
+        assert_eq!(Ok(HashSet::from_iter(vec![(15, 8), (15, 6), (16, 2), (16, 1), (14, 6), (14, 7)].into_iter())), game_state.get_neighbors(15, 7));
+
         assert_eq!(Ok(HashSet::from_iter(vec![(9, 0), (9, 1), (11, 0), (11, 1), (10, 1)].into_iter())), game_state.get_neighbors(10, 0));
+        assert_eq!(Ok(HashSet::from_iter(vec![(9, 5), (9, 6), (11, 5), (11, 6), (10, 4), (10, 6)].into_iter())), game_state.get_neighbors(10, 5));
+        assert_eq!(Ok(HashSet::from_iter(vec![(9, 4), (9, 6), (8, 5), (8, 6), (10, 4), (10, 5)].into_iter())), game_state.get_neighbors(9, 5));
     }
 }
