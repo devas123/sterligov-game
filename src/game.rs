@@ -40,6 +40,7 @@ const POINTS: &'static [&'static [usize]] = &[
 pub struct GameState {
     #[serde(serialize_with = "serialize_cones")]
     pub cones: HashMap<(usize, usize), usize>, //(row, position, user_id)
+    pub players_colors: HashMap<usize, usize> //(user_id, color)
 }
 
 pub fn serialize_cones<S>(cones: &HashMap<(usize, usize), usize>, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
@@ -52,8 +53,11 @@ pub fn serialize_cones<S>(cones: &HashMap<(usize, usize), usize>, serializer: S)
 
 
 impl GameState {
-    pub fn add_cones_for_player(&self, player_number: usize, user_id: usize) -> std::result::Result<GameState, usize> {
-        self.add_cones_for_color(player_number + 1, user_id)
+    pub fn add_cones(&self, color: usize, user_id: usize) -> std::result::Result<GameState, usize> {
+        if self.cones.iter().any(|((_, _), user)| { *user == user_id }) {
+            return Ok(self.clone());
+        }
+        self.add_cones_for_color(color, user_id)
     }
 
     fn add_cones_for_color(&self, color_number: usize, user_id: usize) -> std::result::Result<GameState, usize> {
@@ -68,10 +72,10 @@ impl GameState {
         Ok(gs)
     }
 
-    pub fn get_cones(&self, user_id: usize) -> Vec<(usize, usize)> {
+    pub fn get_cones(&self, user_id: &usize) -> Vec<(usize, usize)> {
         let mut result = Vec::new();
         for (pair, uid) in &self.cones {
-            if *uid == user_id {
+            if *uid == *user_id {
                 result.push(pair.clone())
             }
         }
@@ -249,7 +253,8 @@ impl GameState {
 
     pub fn new() -> GameState {
         GameState {
-            cones: HashMap::new()
+            cones: Default::default(),
+            players_colors: Default::default()
         }
     }
 }

@@ -5,7 +5,7 @@ use serde_json::from_str;
 use tokio::sync::mpsc;
 use warp::filters::ws::{Message, WebSocket};
 
-use crate::{Player, RoomHandle, RoomList};
+use crate::{Player, RoomHandle, RoomList, User};
 
 #[derive(Deserialize, Debug)]
 pub struct TopicsRequest {
@@ -20,6 +20,13 @@ pub struct PlayerJoinedUpdate {
     player_cones: Vec<(usize, usize)>,
     player_name: String,
     player_color: usize,
+}
+
+#[derive(Serialize, Debug)]
+pub struct PlayerLeftUpdate {
+    name: String,
+    user_id: usize,
+    room_id: String,
 }
 
 impl PlayerJoinedUpdate {
@@ -39,8 +46,19 @@ impl PlayerJoinedUpdate {
     }
 }
 
+impl PlayerLeftUpdate {
+    fn new(user_id: usize,
+           room_id: String) -> PlayerLeftUpdate {
+        return PlayerLeftUpdate {
+            name: "player_left".to_string(),
+            user_id,
+            room_id
+        };
+    }
+}
+
 //TODO: we have thread per connection here, maybe use queues/dispatching thread
-pub async fn client_connection(ws: WebSocket, id: String, user_id: usize, rooms: RoomList, mut room: RoomHandle) {
+pub async fn client_connection(ws: WebSocket, id: String, user: User, rooms: RoomList, mut room: RoomHandle) {
     let (player_ws_sender, mut player_ws_receiver) = ws.split();
     let (player_sender, player_receiver) = mpsc::unbounded_channel();
 
@@ -51,43 +69,61 @@ pub async fn client_connection(ws: WebSocket, id: String, user_id: usize, rooms:
     }));
     if room.players.len() > 5 {
         error!("Room full");
-    } else if room.players.iter().any(|x| { x.user_id == user_id }) {
+    } else if room.players.iter().any(|x| { x.user_id == user.user_id }) {
         info!("User already in the room.");
     } else if room.game_started {
         error!("Game is already started.");
     } else {
+        let color = room.game_state.as_ref().map(|gs| {gs.players_colors.get(&user.user_id).cloned()}).flatten();
+        let default_color = room.game_state.as_ref().map(|gs| {
+            let mut color = 1;
+            while color < 7 {
+                info!("Getting default color: {:?}", gs.players_colors);
+                for (pl, pl_col) in gs.players_colors.iter() {
+                    info!("Getting default color: user: {}, user_color: {}, color: {}", *pl, *pl_col, color);
+                    if *pl_col == color {
+                        color += 1;
+                        continue;
+                    }
+                }
+                break;
+            }
+            color
+        }).or(Some(*&room.players.len() + 1)).unwrap();
         let mut update = PlayerJoinedUpdate::new(
-            user_id,
+            user.user_id ,
             id.clone(),
             vec![],
-            "Player".to_ascii_lowercase(),
-            *&room.players.len() + 1,
+            user.user_name.clone(),
+            color.clone().or(Some(default_color.clone())).unwrap(),
         );
         let player = Player {
             sender: Some(player_sender),
-            user_id,
-            color: Some(room.players.len() + 1),
-            name: None,
+            user_id: user.user_id,
+            name: Some(user.user_name.clone()),
         };
         room.players.push(player);
-        if let Some(gs) = &room.game_state {
-            let new_gs = gs.add_cones_for_player(&room.players.len() - 1, user_id).unwrap();
-            update.player_cones = new_gs.get_cones(user_id);
-            room.game_state = Some(new_gs);
+        if let Some(gs) = room.game_state.as_mut() {
+            gs.players_colors.insert(user.user_id, color.clone().or(Some(default_color.clone())).unwrap());
+            if color.is_none() {
+                if let Err(_) = gs.add_cones(default_color, user.user_id).map(|new_gs| {
+                    update.player_cones = new_gs.get_cones(&user.user_id);
+                    room.game_state = Some(new_gs);
+                }) {
+                    error!("Error while adding cones for player {}", user.user_id)
+                }
+            } else {
+                update.player_cones = gs.get_cones(&user.user_id);
+            }
+
         }
-        info!("User with id {} connected to room {}", user_id, id);
+        info!("User with id {} connected to room {}", user.user_id, id);
 
         rooms.write().unwrap().insert(id.clone(), room);
         match rooms.clone().write().unwrap().get(&id) {
             None => {}
             Some(updated_room) => {
-                for p in &updated_room.players {
-                    if p.sender.is_some() {
-                        if let Err(msg) = p.sender.as_ref().unwrap().send(Ok(serde_json::ser::to_string(&update).map(Message::text).unwrap())) {
-                            error!("Error while sending update to players. {:?}", msg)
-                        }
-                    }
-                }
+                send_update(&updated_room, &update);
             }
         }
 
@@ -102,15 +138,31 @@ pub async fn client_connection(ws: WebSocket, id: String, user_id: usize, rooms:
             client_msg(&id, msg, &rooms).await;
         }
 
-        let new_room = rooms.write().unwrap().get(&id).unwrap().remove_player(user_id);
+        let new_room = rooms.write().unwrap().get(&id).unwrap().remove_player(user.user_id);
+
         match new_room {
             Some(rh) => {
-                info!("User {} disconnected from room {}", user_id, id);
+                info!("User {} disconnected from room {}", user.user_id, id);
+                let upd = PlayerLeftUpdate::new(
+                    user.user_id,
+                    rh.room_id.clone()
+                );
+                send_update(&rh, &upd);
                 rooms.write().unwrap().insert(id.clone(), rh);
             }
             None => {
                 info!("Room {} has no members left, so it is removed", id);
                 rooms.write().unwrap().remove(&id);
+            }
+        }
+    }
+}
+
+ fn send_update(rh: &RoomHandle, upd: &impl Serialize) {
+    for p in &rh.players {
+        if p.sender.is_some() {
+            if let Err(msg) = p.sender.as_ref().unwrap().send(Ok(serde_json::ser::to_string(&upd).map(Message::text).unwrap())) {
+                error!("Error while sending update to players. {:?}", msg)
             }
         }
     }

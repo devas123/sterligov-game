@@ -11,7 +11,7 @@ use warp::filters::ws::Message;
 use warp::hyper::StatusCode;
 use warp::reply::json;
 
-use crate::{HOST, Player, PORT, Result, RoomHandle, RoomList, TokenCreatedResponse, UserTokens, ws};
+use crate::{HOST, Player, PORT, Result, RoomHandle, RoomList, TokenCreatedResponse, UserTokens, ws, User};
 use crate::game::GameState;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -75,10 +75,10 @@ pub struct RoomIdParameter {
 impl warp::reject::Reject for UserNotFound {}
 
 impl PlayerDesc {
-    fn from_player(p: &Player) -> PlayerDesc {
+    fn from_player(p: &Player, color: usize) -> PlayerDesc {
         PlayerDesc {
             name: p.name.as_ref().cloned().or_else(|| { Some("Player".to_string()) }).unwrap(),
-            color: p.color.unwrap(),
+            color,
             user_id: p.user_id,
         }
     }
@@ -161,7 +161,7 @@ pub async fn handle_rejection(err: Rejection) -> std::result::Result<impl Reply,
     Ok(warp::reply::with_status(json, code))
 }
 
-pub async fn create_room_handler(user_id_opt: Option<usize>, body: CreateRoomRequest, rooms: RoomList) -> Result<impl Reply> {
+pub async fn create_room_handler(user_token: String, user_id_opt: Option<usize>, body: CreateRoomRequest, rooms: RoomList) -> Result<impl Reply> {
     let user_id = match user_id_opt {
         None => {
             return Err(warp::reject::reject());
@@ -173,15 +173,17 @@ pub async fn create_room_handler(user_id_opt: Option<usize>, body: CreateRoomReq
     create_room(room_id.clone(), user_id.clone(), room_name, rooms).await;
     Ok(json(&CreateRoomResponse {
         room_id: room_id.clone(),
-        url: format!("ws://{}:{}/ws/{}/{}", HOST, PORT, room_id.clone(), user_id),
-        url_sockjs: format!("http://{}:{}/ws/{}/{}", HOST, PORT, room_id.clone(), user_id),
+        url: format!("ws://{}:{}/ws/{}/{}", HOST, PORT, room_id.clone(), user_token),
+        url_sockjs: format!("http://{}:{}/ws/{}/{}", HOST, PORT, room_id.clone(), user_token),
     }))
 }
 
 pub async fn get_players(query: RoomIdParameter, rooms: RoomList) -> Result<impl Reply> {
     let room_id = query.room_id;
     rooms.read().unwrap().get(&room_id)
-        .map(|room| { room.players.iter().map(|player| { PlayerDesc::from_player(player) }).collect() })
+        .map(|room| { room.players.iter().map(|player| {
+            PlayerDesc::from_player(player, room.game_state.as_ref().map(|gs| {gs.players_colors.get(&player.user_id).cloned()}).flatten().unwrap())
+        }).collect() })
         .map(|players: Vec<PlayerDesc>| { json(&players) })
         .ok_or(warp::reject::reject())
 }
@@ -215,14 +217,14 @@ pub async fn get_game_state(query: RoomIdParameter, rooms: RoomList) -> Result<i
         .ok_or(warp::reject::reject())
 }
 
-pub async fn refresh_token_handle(userid: Option<usize>, tokens: UserTokens) -> Result<impl Reply> {
-    match userid {
+pub async fn refresh_token_handle(user: Option<User>, tokens: UserTokens) -> Result<impl Reply> {
+    match user {
         None => {
             Err(warp::reject::reject())
         }
-        Some(user_id) => {
+        Some(usr) => {
             let token = Uuid::new_v4().hyphenated().to_string();
-            tokens.write().unwrap().insert(token.clone(), user_id);
+            tokens.write().unwrap().insert(token.clone(), usr);
             Ok(warp::reply::json(&TokenCreatedResponse { token, created_at: Instant::now() }))
         }
     }
@@ -289,10 +291,10 @@ pub async fn health_handler() -> Result<impl Reply> {
     Ok(StatusCode::OK)
 }
 
-pub async fn ws_handler(ws: warp::ws::Ws, room_id: String, user_id: String, rooms: RoomList) -> Result<impl Reply> {
+pub async fn ws_handler(ws: warp::ws::Ws, room_id: String, user: Option<User>, rooms: RoomList) -> Result<impl Reply> {
     let room = rooms.read().unwrap().get(&room_id).cloned();
     match room {
-        Some(c) => Ok(ws.on_upgrade(move |socket| ws::client_connection(socket, room_id, user_id.parse().unwrap(), rooms, c))),
+        Some(c) => Ok(ws.on_upgrade(move |socket| ws::client_connection(socket, room_id, user.unwrap(), rooms, c))),
         None => Err(warp::reject::not_found()),
     }
 }

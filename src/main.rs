@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use lru_time_cache::LruCache;
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 use warp::{Filter, Rejection, ws::Message};
@@ -32,6 +32,11 @@ pub struct RoomHandle {
     pub active_player: usize,
     pub game_state: Option<GameState>,
     pub players: Vec<Player>,
+}
+
+#[derive(Deserialize)]
+pub struct AddUserRequest {
+    name: String
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -98,7 +103,6 @@ impl RoomHandle {
 #[derive(Debug, Clone)]
 pub struct Player {
     pub user_id: usize,
-    pub color: Option<usize>,
     pub name: Option<String>,
     pub sender: Option<mpsc::UnboundedSender<std::result::Result<Message, warp::Error>>>,
 }
@@ -110,10 +114,16 @@ pub struct TokenCreatedResponse {
     pub created_at: Instant,
 }
 
+#[derive(Clone)]
+pub struct User {
+    pub user_id: usize,
+    pub user_name: String
+}
+
 
 type Result<T> = std::result::Result<T, Rejection>;
 type RoomList = Arc<RwLock<HashMap<String, RoomHandle>>>;
-type UserTokens = Arc<RwLock<LruCache<String, usize>>>;
+type UserTokens = Arc<RwLock<LruCache<String, User>>>;
 
 #[tokio::main]
 async fn main() {
@@ -122,7 +132,7 @@ async fn main() {
     let rooms: RoomList = Arc::new(RwLock::new(HashMap::new()));
     let users_count = Arc::new(AtomicUsize::new(0));
     let time_to_live = ::std::time::Duration::from_secs(3600 * 24);
-    let users: UserTokens = Arc::new(RwLock::new(LruCache::<String, usize>::with_expiry_duration(time_to_live)));
+    let users: UserTokens = Arc::new(RwLock::new(LruCache::<String, User>::with_expiry_duration(time_to_live)));
     let health_route = warp::path!("health").and_then(handler::health_handler);
     let cloned_users = users.clone();
     let validate_path = warp::path("validate")
@@ -144,15 +154,18 @@ async fn main() {
         .and_then(handler::get_game_state);
     let add_user = warp::path("add")
         .and(warp::post())
-        .map(move || {
+        .and(warp::body::content_length_limit(1024 * 32))
+        .and(warp::body::json())
+        .map(move |request: AddUserRequest| {
+
             let token = Uuid::new_v4().hyphenated().to_string();
             let new_id = users_count.clone().fetch_add(1, Ordering::Relaxed);
-            cloned_users.write().unwrap().insert(token.clone(), new_id.clone());
+            cloned_users.write().unwrap().insert(token.clone(), User { user_id: new_id.clone(), user_name: request.name });
             warp::reply::json(&TokenCreatedResponse { token, created_at: Instant::now() })
         });
     let refresh_token = warp::path("refresh")
         .and(warp::post())
-        .and(with_userid(users.clone()))
+        .and(with_user(users.clone()))
         .and(with_users(users.clone()))
         .and_then(handler::refresh_token_handle);
 
@@ -160,6 +173,7 @@ async fn main() {
     let room_messages = warp::path("message");
     let room_handle_routes = room
         .and(warp::post())
+        .and(warp::header::<String>(USER_TOKEN_HEADER))
         .and(with_userid(users.clone()))
         .and(warp::body::json())
         .and(with_rooms(rooms.clone()))
@@ -180,7 +194,7 @@ async fn main() {
     let ws_route = warp::path("ws")
         .and(warp::ws())
         .and(warp::path::param())
-        .and(warp::path::param())
+        .and(with_user_from_token(users.clone()))
         .and(with_rooms(rooms.clone()))
         .and_then(handler::ws_handler);
 
@@ -228,6 +242,20 @@ fn with_users(users: UserTokens) -> impl Filter<Extract=(UserTokens, ), Error=In
 }
 
 fn with_userid(users: UserTokens) -> impl Filter<Extract=(Option<usize>, ), Error=Rejection> + Clone {
+    warp::header::optional(USER_TOKEN_HEADER).map(move |token: Option<String>| {
+        token.map(|t| {
+            users.write().unwrap().get(&t).map(|user| { user.user_id })
+        }).flatten()
+    })
+}
+
+fn with_user_from_token(users: UserTokens) -> impl Filter<Extract=(Option<User>, ), Error=Rejection> + Clone {
+    warp::path::param().map(move |token: String| {
+        users.write().unwrap().get(&token).map(|user| { user }).cloned()
+    })
+}
+
+fn with_user(users: UserTokens) -> impl Filter<Extract=(Option<User>, ), Error=Rejection> + Clone {
     warp::header::optional(USER_TOKEN_HEADER).map(move |token: Option<String>| {
         token.map(|t| {
             users.write().unwrap().get(&t).cloned()
