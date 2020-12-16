@@ -137,28 +137,27 @@ pub async fn client_connection(ws: WebSocket, id: String, user: User, rooms: Roo
             };
             client_msg(&id, msg, &rooms).await;
         }
+        let mut remove_room = false;
+        if let Some(new_room) = rooms.write().unwrap().get_mut(&id) {
+            new_room.remove_player(user.user_id);
+            remove_room = new_room.players.len() == 0;
+            info!("User {} disconnected from room {}", user.user_id, id);
+            let upd = PlayerLeftUpdate::new(
+                user.user_id,
+                new_room.room_id.clone()
+            );
+            send_update(new_room, &upd);
+        }
 
-        let new_room = rooms.write().unwrap().get(&id).unwrap().remove_player(user.user_id);
-
-        match new_room {
-            Some(rh) => {
-                info!("User {} disconnected from room {}", user.user_id, id);
-                let upd = PlayerLeftUpdate::new(
-                    user.user_id,
-                    rh.room_id.clone()
-                );
-                send_update(&rh, &upd);
-                rooms.write().unwrap().insert(id.clone(), rh);
-            }
-            None => {
-                info!("Room {} has no members left, so it is removed", id);
-                rooms.write().unwrap().remove(&id);
-            }
+        if remove_room {
+            info!("Room {} has no members left, so it will be removed", id);
+            rooms.write().unwrap().remove(&id);
+            info!("Room {} removed", id);
         }
     }
 }
 
- fn send_update(rh: &RoomHandle, upd: &impl Serialize) {
+ pub fn send_update(rh: &RoomHandle, upd: &impl Serialize) {
     for p in &rh.players {
         if p.sender.is_some() {
             if let Err(msg) = p.sender.as_ref().unwrap().send(Ok(serde_json::ser::to_string(&upd).map(Message::text).unwrap())) {

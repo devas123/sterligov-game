@@ -6,12 +6,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use lru_time_cache::LruCache;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 use warp::{Filter, Rejection, ws::Message};
 
 use crate::game::GameState;
+use crate::handler::RoomDesc;
+use log::error;
 
 mod handler;
 mod ws;
@@ -24,6 +26,7 @@ const USER_TOKEN_HEADER: &str = "X-User-Token";
 #[derive(Debug, Clone)]
 pub struct RoomHandle {
     pub room_id: String,
+    pub winner: Option<usize>,
     pub created_by: usize,
     pub created_time: Instant,
     pub name: String,
@@ -50,50 +53,59 @@ pub struct RoomUpdate {
 impl RoomUpdate {
     fn new(by_user_id: usize,
            path: Vec<(usize, usize)>,
-           next_player: usize,) -> RoomUpdate {
+           next_player: usize, ) -> RoomUpdate {
         RoomUpdate {
-            name: "room_update".to_string(),
+            name: "move_made".to_string(),
             by_user_id,
             path,
-            next_player
+            next_player,
+        }
+    }
+}
+
+
+
+#[derive(Debug, Clone, Serialize)]
+struct RoomStateUpdate {
+    name: String,
+    pub room: RoomDesc
+}
+
+impl RoomStateUpdate {
+    fn new(room: &RoomHandle) -> RoomStateUpdate {
+        RoomStateUpdate {
+            name: "room_state_update".to_string(),
+            room: RoomDesc::from_room(room)
         }
     }
 }
 
 
 impl RoomHandle {
-    pub fn incr_active_player(&self) -> RoomHandle {
-        let mut rh = self.clone();
-        rh.active_player = (rh.active_player + 1) % rh.players.len();
-        rh
-    }
-
-    pub fn remove_player(&self, user_id: usize) -> Option<RoomHandle> {
-        let mut rh = self.clone();
-        let mut players = Vec::new();
-        for p in rh.players {
-            if p.user_id != user_id {
-                players.push(p);
+    pub fn remove_player(&mut self, user_id: usize) {
+        for (ind, p) in self.players.iter().enumerate() {
+            if p.user_id == user_id {
+                self.players.remove(ind);
+                break;
             }
         }
-        rh.players = players;
-        if rh.players.len() > 0 {
-            Some(rh)
-        } else {
-            None
-        }
     }
 
-    pub fn make_a_move(&self, path: Vec<(i32, i32)>, user_id: usize) -> std::result::Result<(RoomUpdate, RoomHandle), usize> {
-        let mut rh = self.clone();
-        if let Some(gs) = rh.game_state.as_mut() {
-            let next = (rh.active_player + 1) % rh.players.len();
+    pub fn make_a_move(&mut self, path: Vec<(i32, i32)>, user_id: usize) -> std::result::Result<RoomUpdate, usize> {
+        if let Some(gs) = self.game_state.as_mut() {
+            let next = (self.active_player + 1) % self.players.len();
             let p = (path[0].0 as usize, path[0].1 as usize);
-            if *gs.cones.get(&p).unwrap() == user_id {
-                let update = gs.update_cones(path.clone())
-                    .map(move |path: Vec<(usize, usize)>| { RoomUpdate::new( user_id, path, next.clone()) });
-                rh.active_player = next;
-                return update.map(|u| { (u, rh) });
+            if let Some(usr) = gs.cones.get(&p) {
+                if *usr == user_id {
+                    let update = gs.update_cones(path.clone())
+                        .map(move |path: Vec<(usize, usize)>| {
+                            self.active_player = next;
+                            RoomUpdate::new(user_id, path, next.clone())
+                        });
+                    return update;
+                }
+            } else {
+                error!("Could not find user {} in cones at position: {:?}. Cones: {:?}", user_id, p, gs.cones);
             }
         }
         Err(0)
@@ -112,12 +124,14 @@ pub struct TokenCreatedResponse {
     pub token: String,
     #[serde(with = "serde_millis")]
     pub created_at: Instant,
+    pub user_id: usize,
+    pub user_name: String,
 }
 
 #[derive(Clone)]
 pub struct User {
     pub user_id: usize,
-    pub user_name: String
+    pub user_name: String,
 }
 
 
@@ -157,11 +171,10 @@ async fn main() {
         .and(warp::body::content_length_limit(1024 * 32))
         .and(warp::body::json())
         .map(move |request: AddUserRequest| {
-
             let token = Uuid::new_v4().hyphenated().to_string();
             let new_id = users_count.clone().fetch_add(1, Ordering::Relaxed);
-            cloned_users.write().unwrap().insert(token.clone(), User { user_id: new_id.clone(), user_name: request.name });
-            warp::reply::json(&TokenCreatedResponse { token, created_at: Instant::now() })
+            cloned_users.write().unwrap().insert(token.clone(), User { user_id: new_id.clone(), user_name: request.name.clone() });
+            warp::reply::json(&TokenCreatedResponse { token, created_at: Instant::now(), user_id: new_id, user_name: request.name })
         });
     let refresh_token = warp::path("refresh")
         .and(warp::post())
@@ -171,6 +184,7 @@ async fn main() {
 
     let room = warp::path("room");
     let room_messages = warp::path("message");
+    let room_updates = warp::path("update");
     let room_handle_routes = room
         .and(warp::post())
         .and(warp::header::<String>(USER_TOKEN_HEADER))
@@ -178,6 +192,13 @@ async fn main() {
         .and(warp::body::json())
         .and(with_rooms(rooms.clone()))
         .and_then(handler::create_room_handler)
+        .or(room
+            .and(warp::get())
+            .and(warp::path::param())
+            .and(with_rooms(rooms.clone()))
+            .map(|room_id: String, rooms: RoomList| {
+                warp::reply::json(&rooms.read().unwrap().get(&room_id).map(RoomDesc::from_room))
+            }))
         .or(room
             .and(warp::get())
             .and(with_rooms(rooms.clone()))
@@ -190,6 +211,14 @@ async fn main() {
         .and(with_rooms(rooms.clone()))
         .and(with_userid(users.clone()))
         .and_then(handler::publish_to_room_handler);
+
+    let room_updates_routes = room_updates
+        .and(warp::post())
+        .and(warp::path::param())
+        .and(warp::body::json())
+        .and(with_rooms(rooms.clone()))
+        .and(with_userid(users.clone()))
+        .and_then(handler::update_room_state_handler);
 
     let ws_route = warp::path("ws")
         .and(warp::ws())
@@ -221,6 +250,7 @@ async fn main() {
         .or(game_state)
         .or(refresh_token)
         .or(validate_path)
+        .or(room_updates_routes)
         // .or(publish)
         .with(cors)
         .recover(handler::handle_rejection)

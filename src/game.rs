@@ -108,12 +108,12 @@ impl GameState {
         return Ok(self.cones.get(&(r, c)).is_some());
     }
 
-    pub fn add_cone(&mut self, row: i32, col: i32, color: usize) -> std::result::Result<bool, usize> {
+    pub fn add_cone(&mut self, row: i32, col: i32, user_id: usize) -> std::result::Result<bool, usize> {
         let (r, c) = self.validate_dimensions(row, col)?;
         if self.cones.contains_key(&(r, c)) {
             return Err(0);
         }
-        self.cones.insert((r, c).clone(), color.clone());
+        self.cones.insert((r, c).clone(), user_id.clone());
         Ok(true)
     }
 
