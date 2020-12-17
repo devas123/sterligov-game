@@ -1,9 +1,8 @@
-import { CONTENT_TYPE, X_USER_TOKEN } from "./const";
-import type { RoomDesc } from "./model";
-
+import { CONTENT_TYPE, X_USER_TOKEN } from './const';
+const base_url = 'http://localhost:8000';
 export const createRoomRequest = async (room_name: string, usrToken) => {
-    const roomCreate = await fetch("http://localhost:8000/room", {
-      method: "POST",
+    const roomCreate = await fetch(`${base_url}/room`, {
+      method: `POST`,
       body: JSON.stringify({ room_name }),
       headers: {
         "X-User-Token": usrToken,
@@ -16,8 +15,8 @@ export const createRoomRequest = async (room_name: string, usrToken) => {
   export const addUserRequest = async (name: string) => {
     const headers = new Headers();
     headers.append(CONTENT_TYPE, "application/json; charset=UTF-8");
-    const user = await fetch("http://localhost:8000/add", {
-      method: "POST",
+    const user = await fetch(`${base_url}/add`, {
+      method: `POST`,
       body: JSON.stringify({ name }),
       headers,
     });
@@ -27,24 +26,24 @@ export const createRoomRequest = async (room_name: string, usrToken) => {
   export const refreshTokenRequest = async (token: string) => {
     const headers = new Headers();
     headers.append(X_USER_TOKEN, token);
-    return fetch("http://localhost:8000/refresh", {
-      method: "POST",
+    return fetch(`${base_url}/refresh`, {
+      method: `POST`,
       headers,
     })
       .then((user) => user.status == 200 ? user.json() : Promise.reject(user))
       .catch((err) => {
-        // console.log("error while refreshing token", err);
-        localStorage.removeItem("x-user-token");
-        localStorage.removeItem("x-user-id");
-        localStorage.removeItem("x-user-name");
-        localStorage.removeItem("x-user-id-created-at");
+        // console.log(`error while refreshing token`, err);
+        localStorage.removeItem(`x-user-token`);
+        localStorage.removeItem(`x-user-id`);
+        localStorage.removeItem(`x-user-name`);
+        localStorage.removeItem(`x-user-id-created-at`);
         Promise.reject();
       })
   }
 
   export const getRoomsListRequest = async () => {
     try {
-      const resp = await fetch("http://localhost:8000/room", { method: "GET" });
+      const resp = await fetch(`${base_url}/room`, { method: `GET` });
       if (resp.status == 200) {
         return resp.json();
       } else {
@@ -59,11 +58,11 @@ export const createRoomRequest = async (room_name: string, usrToken) => {
    export const validatePathRequest = async (path: number[][], userToken: string, room_id: string) => {
     const headers = new Headers();
     headers.append(X_USER_TOKEN, userToken);
-    headers.append(CONTENT_TYPE, "application/json; charset=UTF-8");
+    headers.append(CONTENT_TYPE, `application/json; charset=UTF-8`);
     const validate = await fetch(
-      `http://localhost:8000/validate/${room_id}`,
+      `${base_url}/validate/${room_id}`,
       {
-        method: "POST",
+        method: `POST`,
         body: JSON.stringify(path),
         headers,
       }
@@ -75,9 +74,9 @@ export const createRoomRequest = async (room_name: string, usrToken) => {
   export const  makeAMoveRequest = async (path: number[][], userToken: string, room_id: string) => {
     const headers = new Headers();
     headers.append(X_USER_TOKEN, userToken);
-    headers.append(CONTENT_TYPE, "application/json; charset=UTF-8");
-    await fetch(`http://localhost:8000/message/${room_id}`, {
-      method: "POST",
+    headers.append(CONTENT_TYPE, `application/json; charset=UTF-8`);
+    await fetch(`${base_url}/message/${room_id}`, {
+      method: `POST`,
       body: JSON.stringify({
         path,
         calculate_path: false,
@@ -89,9 +88,9 @@ export const createRoomRequest = async (room_name: string, usrToken) => {
   export const startGameRequest = async (userToken: string, room_id: string) => {
     const headers = new Headers();
     headers.append(X_USER_TOKEN, userToken);
-    headers.append(CONTENT_TYPE, "application/json; charset=UTF-8");
-    await fetch(`http://localhost:8000/update/${room_id}`, {
-      method: "POST",
+    headers.append(CONTENT_TYPE, `application/json; charset=UTF-8`);
+    await fetch(`${base_url}/update/${room_id}`, {
+      method: `POST`,
       body: JSON.stringify({
         start: true,
       }),
@@ -99,11 +98,11 @@ export const createRoomRequest = async (room_name: string, usrToken) => {
     });
   }
 
-  export const roomResolveRequest = async (room_id: string) => fetch(`http://localhost:8000/room/${room_id}`)
+  export const roomResolveRequest = async (room_id: string) => fetch(`${base_url}/room/${room_id}`)
   .then(async (res) => {
     if (res.status == 200) {
       const r = await res.json();
-      // console.log("Received room state:", r);
+      // console.log(`Received room state:`, r);
       return r;
     } else {
       return Promise.reject(res);
@@ -117,7 +116,7 @@ export const createRoomRequest = async (room_name: string, usrToken) => {
 
   export const getRoomPlayersRequest = async (room_id: string) => {
     const r = await fetch(
-        `http://localhost:8000/players?room_id=${room_id}`
+        `${base_url}/players?room_id=${room_id}`
       )
         .then((res) => {
           if (res.status == 200) {
@@ -133,7 +132,7 @@ export const createRoomRequest = async (room_name: string, usrToken) => {
   }
 
   export const gameStateRequest = async (room_id: string) => await fetch(
-    `http://localhost:8000/game-state?room_id=${room_id}`
+    `${base_url}/game-state?room_id=${room_id}`
   )
     .then((res) => {
       if (res.status == 200) {
