@@ -8,8 +8,6 @@
   } from "./const";
   import { createEventDispatcher } from "svelte";
   import Triangle from "./Triangle.svelte";
-  import App from "./App.svelte";
-  import Home from "./Home.svelte";
 import EmptyTriangle from "./EmptyTriangle.svelte";
   const dispatch = createEventDispatcher();
 

@@ -42,7 +42,10 @@ export default {
 	},
 	plugins: [
 		replace({
-			'process.env.NODE_ENV': JSON.stringify('development')
+			'process.env.NODE_ENV': JSON.stringify('development'),
+			__environment: JSON.stringify({
+				isProd: production
+			})
 		  }),
 		svelte({
 			preprocess: sveltePreprocess(),

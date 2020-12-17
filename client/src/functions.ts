@@ -1,5 +1,5 @@
 import { CONTENT_TYPE, X_USER_TOKEN } from './const';
-const base_url = 'http://localhost:8000';
+const base_url = __environment?.isProd ? '/api' : 'http://localhost:8000';
 export const createRoomRequest = async (room_name: string, usrToken) => {
     const roomCreate = await fetch(`${base_url}/room`, {
       method: `POST`,
