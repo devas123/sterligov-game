@@ -91,7 +91,7 @@
       try {
         socket.close();
       } catch (err) {
-        console.log(err);
+        console.error(err);
       }
     }
   });
@@ -107,7 +107,7 @@
 
       // Listen for messages
       socket.addEventListener("message", function (event) {
-        console.log("Message from server", event.data);
+        // console.log("Message from server", event.data);
         const update = JSON.parse(event.data);
         const { name } = update;
         switch (name) {
@@ -135,7 +135,7 @@
               ] = user_id;
             }
             cones = new_cones;
-            console.log(cones);
+            // console.log(cones);
             break;
           }
           case "player_left": {
@@ -173,7 +173,7 @@
         (value, index, arr) =>
           arr.findIndex((vv) => value.user_id === vv.user_id) === index
       );
-      console.log(`Players: ${JSON.stringify(players)}`);
+      // console.log(`Players: ${JSON.stringify(players)}`);
       const gameStateRes = await gameStateRequest(params.id);
       const cones_res = gameStateRes || {};
       cones = { ...cones, ...cones_res.cones };

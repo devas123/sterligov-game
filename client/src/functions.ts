@@ -33,7 +33,7 @@ export const createRoomRequest = async (room_name: string, usrToken) => {
     })
       .then((user) => user.status == 200 ? user.json() : Promise.reject(user))
       .catch((err) => {
-        console.log("error while refreshing token", err);
+        // console.log("error while refreshing token", err);
         localStorage.removeItem("x-user-token");
         localStorage.removeItem("x-user-id");
         localStorage.removeItem("x-user-name");
@@ -103,7 +103,7 @@ export const createRoomRequest = async (room_name: string, usrToken) => {
   .then(async (res) => {
     if (res.status == 200) {
       const r = await res.json();
-      console.log("Received room state:", r);
+      // console.log("Received room state:", r);
       return r;
     } else {
       return Promise.reject(res);
@@ -128,7 +128,7 @@ export const createRoomRequest = async (room_name: string, usrToken) => {
         })
         .catch(console.error);
       const received = r || [];
-      console.log(received);
+      // console.log(received);
       return received;
   }
 

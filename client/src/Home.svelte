@@ -30,7 +30,7 @@
 
   async function addUser(name: string) {
     const response = await addUserRequest(name);
-    console.log(response);
+    // console.log(response);
     userToken.set(response.token);
     userId.set(response.user_id);
     localStorage.setItem("x-user-token", response.token);
@@ -42,7 +42,7 @@
   async function refresh(token: string) {
     return refreshTokenRequest(token)
       .catch((err) => {
-        console.log("error while refreshing token", err);
+        // console.log("error while refreshing token", err);
         localStorage.removeItem("x-user-token");
         localStorage.removeItem("x-user-id");
         localStorage.removeItem("x-user-name");
@@ -59,7 +59,7 @@
           localStorage.setItem("x-user-id", t.user_id);
           localStorage.setItem("x-user-name", t.user_name);
           localStorage.setItem("x-user-id-created-at", t.created_at);
-          console.log("Refreshed user token successfully", t);
+          // console.log("Refreshed user token successfully", t);
         }
         return Promise.resolve();
       });
@@ -80,7 +80,7 @@
 
   async function getRoomsAndUpdate() {
     const rooms = await getRoomsList();
-    console.log("Rooms: ", rooms);
+    // console.log("Rooms: ", rooms);
     allRooms = rooms;
     return rooms;
   }

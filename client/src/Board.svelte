@@ -1,6 +1,16 @@
 <script lang="ts">
-  import { pointCounts, isInCorner, getColorString } from "./const";
+  import {
+    pointCounts,
+    isInCorner,
+    getColorString,
+    small_triangles_coordinates,
+    small_triangles_center,
+  } from "./const";
   import { createEventDispatcher } from "svelte";
+  import Triangle from "./Triangle.svelte";
+  import App from "./App.svelte";
+  import Home from "./Home.svelte";
+import EmptyTriangle from "./EmptyTriangle.svelte";
   const dispatch = createEventDispatcher();
 
   function select(row: number, col: number) {
@@ -24,7 +34,7 @@
   export let selectedCones = [];
   export let highlightedPath = [];
   export let players_colors = new Map<number, number>();
-  let dot_radius = 5;
+  let dot_radius = 3;
   let cone_radius = 8;
   function getXCoordinate(col: number, colSize: number, width: number) {
     let minStep = width / 16;
@@ -79,6 +89,42 @@
   ) {
     return players_colors.get(cones[`${row},${col}`]);
   }
+
+  const triangle = (component: any, a: number[], b: number[], c: number[], color: string) => {
+    return {
+      component,
+      props: {
+        a: [
+          getXCoordinate(a[1], pointCounts[a[0]], width),
+          getYCoordinate(a[0], height),
+        ],
+        b: [
+          getXCoordinate(b[1], pointCounts[b[0]], width),
+          getYCoordinate(b[0], height),
+        ],
+        c: [
+          getXCoordinate(c[1], pointCounts[c[0]], width),
+          getYCoordinate(c[0], height),
+        ],
+        cls: `triangle ${color}`,
+      },
+    };
+  };
+
+  const big_triangles = [
+    triangle(Triangle, [0, 0], [5, 5], [5, 10], `purple`),
+    triangle(Triangle, [5, 5], [5, 0], [10, 0], `blue`),
+    triangle(Triangle, [10, 0], [15, 0], [15, 5], `red`),
+    triangle(Triangle, [15, 5], [15, 10], [20, 0], `yellow`),
+    triangle(Triangle, [15, 10], [15, 15], [10, 10], `orange`),
+    triangle(Triangle, [10, 10], [5, 15], [5, 10], `green`),
+  ];
+  const small_triangles = small_triangles_coordinates.map((arr) =>
+    triangle(Triangle, arr[0], arr[1], arr[2], "opaque")
+  );
+  const center_triangles = small_triangles_center.map((arr) =>
+    triangle(EmptyTriangle, arr[0], arr[1], arr[2], "simple")
+  );
 </script>
 
 <style>
@@ -88,24 +134,6 @@
     max-height: 750px;
     width: auto;
     height: 100%;
-  }
-  .purple {
-    fill: blueviolet;
-  }
-  .blue {
-    fill: hsl(216, 100%, 50%);
-  }
-  .red {
-    fill: red;
-  }
-  .yellow {
-    fill: yellow;
-  }
-  .orange {
-    fill: orange;
-  }
-  .green {
-    fill: greenyellow;
   }
   .big_circle {
     fill: rgb(175, 175, 175);
@@ -141,7 +169,7 @@
     cy={getYCoordinate(10, height)}
     r={height / 2 - 10}
     class="big_circle" />
-  <polygon
+  <!-- <polygon
     points="{getXCoordinate(0, pointCounts[0], width)},{getYCoordinate(0, height)} 
                            {getXCoordinate(5, pointCounts[5], width)},{getYCoordinate(5, height)} 
                            {getXCoordinate(10, pointCounts[5], width)},{getYCoordinate(5, height)}"
@@ -170,14 +198,23 @@
     points="{getXCoordinate(10, pointCounts[10], width)},{getYCoordinate(10, height)}
                            {getXCoordinate(15, pointCounts[5], width)},{getYCoordinate(5, height)} 
                            {getXCoordinate(10, pointCounts[5], width)},{getYCoordinate(5, height)}"
-    class="triangle green" />
+    class="triangle green" /> -->
+  {#each big_triangles as bt}
+    <svelte:component this={bt.component} {...bt.props} />
+  {/each}
+  {#each small_triangles as st}
+    <svelte:component this={st.component} {...st.props} />
+  {/each}
+  {#each center_triangles as st}
+    <svelte:component this={st.component} {...st.props} />
+  {/each}
 
   {#each pointCounts as p, i}
     {#each Array(p) as _, point}
       <circle
         cx={getXCoordinate(point, p, width)}
         cy={getYCoordinate(i, height)}
-        r={isInCorner(i, point) ? dot_radius : dot_radius - 2}
+        r={isInCorner(i, point) ? dot_radius : dot_radius - 1}
         class={(canSelectCone(cones, selectedCones, i, point) ? 'board-point' : '') + (isInCorner(i, point) ? ' big_point' : '') + (isSelected(selectedCones, i, point) ? ' selected' : '')}
         on:click={(_e) => select(i, point)} />
       {#if isCone(cones, i, point)}
