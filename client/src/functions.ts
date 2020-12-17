@@ -1,5 +1,6 @@
 import { CONTENT_TYPE, X_USER_TOKEN } from './const';
 const base_url = __environment?.isProd ? '/api' : 'http://localhost:8000';
+const ws_base_url = __environment?.isProd ? 'ws://localhost/api' : 'ws://localhost:8000';
 export const createRoomRequest = async (room_name: string, usrToken) => {
     const roomCreate = await fetch(`${base_url}/room`, {
       method: `POST`,
@@ -111,7 +112,7 @@ export const createRoomRequest = async (room_name: string, usrToken) => {
   .catch(console.error);
 
   export const createWebSocketForRoomRequest = (userToken: string, room_id: string) => new WebSocket(
-    `ws://localhost:8000/ws/${room_id}/${userToken}`
+    `${ws_base_url}/ws/${room_id}/${userToken}`
   );
 
   export const getRoomPlayersRequest = async (room_id: string) => {
