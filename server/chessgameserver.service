@@ -1,0 +1,16 @@
+[Unit]
+Description=chess-game-server
+After=network.target
+
+[Service]
+WorkingDirectory=/root/sterligov-game/server/target/release
+ExecStart=/root/sterligov-game/server/target/release/chess-game-server
+KillMode=process
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=what
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
