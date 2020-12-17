@@ -47,5 +47,5 @@
 </main>
 <div class="footer">
   <div class="fill"></div>
-  <span>Source code</span>
+  <span>Source code at <a href="https://github.com/devas123/sterligov-game">github</a></span>
 </div>
