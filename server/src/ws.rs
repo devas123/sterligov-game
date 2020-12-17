@@ -71,7 +71,7 @@ pub async fn client_connection(ws: WebSocket, id: String, user: User, rooms: Roo
         error!("Room full");
     } else if room.players.iter().any(|x| { x.user_id == user.user_id }) {
         info!("User already in the room.");
-    } else if room.game_started {
+    } else if room.game_started && !(room.game_state.is_some() && room.game_state.as_ref().unwrap().players_colors.get(&user.user_id).is_some()) {
         error!("Game is already started.");
     } else {
         let color = room.game_state.as_ref().map(|gs| {gs.players_colors.get(&user.user_id).cloned()}).flatten();
