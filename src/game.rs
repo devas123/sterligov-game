@@ -35,6 +35,18 @@ const POINTS: &'static [&'static [usize]] = &[
     &[YELLOW]
 ];
 
+pub fn get_complementary(color: &usize) -> &'static usize {
+    match *color {
+        PURPLE => { &YELLOW }
+        GREEN => { &RED }
+        ORANGE =>  { &BLUE }
+        YELLOW =>  { &PURPLE }
+        RED =>  { &GREEN }
+        BLUE =>  { &ORANGE }
+        _ => &NEUTRAL
+    }
+}
+
 //180 places in total.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameState {
@@ -53,6 +65,12 @@ pub fn serialize_cones<S>(cones: &HashMap<(usize, usize), usize>, serializer: S)
 
 
 impl GameState {
+
+    pub fn get_board_color(&self, row: &usize, col: &usize) -> std::result::Result<&'static usize, usize> {
+        self.validate_dimensions(*row as i32, *col as i32)?;
+        Ok(&POINTS[*row][*col])
+    }
+
     pub fn add_cones(&self, color: usize, user_id: usize) -> std::result::Result<GameState, usize> {
         if self.cones.iter().any(|((_, _), user)| { *user == user_id }) {
             return Ok(self.clone());
@@ -149,13 +167,33 @@ impl GameState {
         Err(1)
     }
 
-    pub fn update_cones(&mut self, path: Vec<(i32, i32)>) -> std::result::Result<Vec<(usize, usize)>, usize> {
+    pub fn is_all_cones_in_place(&self, user_id: &usize) -> std::result::Result<bool, usize> {
+        match self.players_colors.get(user_id) {
+            None => {
+                Err(0)
+            }
+            Some(color) => {
+                let complementary_color = get_complementary(color);
+                for ((r, c), usr_id) in self.cones.iter() {
+                    let board_color = self.get_board_color(r, c)?;
+                    if *usr_id == *user_id && *board_color != *complementary_color {
+                        return Ok(false);
+                    }
+                }
+                Ok(true)
+            }
+        }
+
+    }
+
+    pub fn update_cones(&mut self, path: &Vec<(i32, i32)>, user_id: &usize) -> std::result::Result<(Vec<(usize, usize)>, bool), usize> {
         self.validate_path(&path)?;
         let (s1, s2) = path[0].clone();
         let (e1, e2) = path[path.len() - 1].clone();
         let player = self.cones.remove(&(s1 as usize, s2 as usize));
         self.cones.insert((e1 as usize, e2 as usize), player.unwrap());
-        Ok(path.clone().iter().map(|(x, y)| { (*x as usize, *y as usize) }).collect())
+        let game_finished = self.is_all_cones_in_place(user_id)?;
+        Ok((path.clone().iter().map(|(x, y)| { (*x as usize, *y as usize) }).collect(), game_finished))
     }
 
     pub fn validate_path(&self, path: &Vec<(i32, i32)>) -> std::result::Result<bool, usize> {

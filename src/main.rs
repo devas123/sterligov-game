@@ -49,17 +49,20 @@ pub struct RoomUpdate {
     pub by_user_id: usize,
     pub path: Vec<(usize, usize)>,
     pub next_player: usize,
+    pub game_finished: bool
 }
 
 impl RoomUpdate {
-    fn new(by_user_id: usize,
+    fn new_with_finished(by_user_id: usize,
            path: Vec<(usize, usize)>,
-           next_player: usize, ) -> RoomUpdate {
+           next_player: usize,
+           game_finished: bool) -> RoomUpdate {
         RoomUpdate {
             name: "move_made".to_string(),
             by_user_id,
             path,
             next_player,
+            game_finished
         }
     }
 }
@@ -98,10 +101,14 @@ impl RoomHandle {
             let p = (path[0].0 as usize, path[0].1 as usize);
             if let Some(usr) = gs.cones.get(&p) {
                 if *usr == user_id {
-                    let update = gs.update_cones(path.clone())
-                        .map(move |path: Vec<(usize, usize)>| {
+                    let update = gs.update_cones(&path, &user_id)
+                        .map(|(path, game_finished)| {
                             self.active_player = next;
-                            RoomUpdate::new(user_id, path, next.clone())
+                            if game_finished {
+                                self.winner = Some(user_id.clone());
+                                self.game_finished = true;
+                            }
+                            RoomUpdate::new_with_finished(user_id, path, next.clone(), game_finished)
                         });
                     return update;
                 }
