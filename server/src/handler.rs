@@ -124,7 +124,7 @@ pub async fn update_room_state_handler(room_id: String, body: UpdateRoomStateReq
 pub async fn publish_to_room_handler(room_id: String, body: PublishToARoomRequest, rooms: RoomList, user_id_opt: Option<usize>) -> Result<impl Reply> {
     match user_id_opt {
         Some(user_id) => {
-            publish_to_room(room_id.clone(), user_id.clone(), rooms, body).await;
+            publish_to_room(room_id.clone(), user_id.clone(), rooms, body).await?;
             Ok(StatusCode::OK)
         }
         None => Err(warp::reject::custom(UserNotFound))
@@ -269,8 +269,17 @@ async fn create_room(room_id: String, user_id: usize, room_name: String, rooms: 
     desc
 }
 
-async fn publish_to_room(room_id: String, user_id: usize, rooms: RoomList, request: PublishToARoomRequest) {
+async fn publish_to_room(room_id: String, user_id: usize, rooms: RoomList, request: PublishToARoomRequest) -> Result<&'static str> {
     info!("Make a move, room: {}, user_id: {}, message: {:?}", room_id, user_id, request);
+    if request.path.len() < 2 {
+        return Err(warp::reject());
+    } else {
+        for x in request.path.iter() {
+            if x.len() != 2 {
+                return Err(warp::reject());
+            }
+        }
+    }
     let transformed: Vec<(i32, i32)> = request.path.iter().map(|v| { (v[0], v[1]) }).collect();
     if let Some(r) = rooms.clone().try_write().unwrap().get_mut(&room_id) {
         info!("Found the room: {}, created_by {} at {:?}", r.name, r.created_by, r.created_time);
@@ -290,6 +299,7 @@ async fn publish_to_room(room_id: String, user_id: usize, rooms: RoomList, reque
         error!("Message not sent!!!!!111")
     }
     info!("Finished.");
+    Ok("ok")
 }
 
 async fn update_room_state(room_id: String, user_id: usize, rooms: RoomList, request: UpdateRoomStateRequest) {
