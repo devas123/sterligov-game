@@ -14,6 +14,7 @@ use warp::{Filter, Rejection, ws::Message};
 use crate::game::GameState;
 use crate::handler::RoomDesc;
 use log::error;
+use serde::de::DeserializeOwned;
 
 mod handler;
 mod ws;
@@ -139,6 +140,16 @@ type Result<T> = std::result::Result<T, Rejection>;
 type RoomList = Arc<RwLock<HashMap<String, RoomHandle>>>;
 type UserTokens = Arc<RwLock<LruCache<String, User>>>;
 
+fn create_default_path<T>(path: &'static str, rooms: RoomList, users: UserTokens) -> impl Filter<Extract=(String, T, RoomList, Option<usize>, ), Error=Rejection> + Clone
+where T: DeserializeOwned + Send {
+    return warp::path(path)
+        .and(warp::post())
+        .and(warp::path::param())
+        .and(warp::body::json())
+        .and(with_rooms(rooms))
+        .and(with_userid(users))
+}
+
 #[tokio::main]
 async fn main() {
     env::set_var("RUST_LOG", "debug");
@@ -183,8 +194,8 @@ async fn main() {
         .and_then(handler::refresh_token_handle);
 
     let room = warp::path("room");
-    let room_messages = warp::path("message");
-    let room_updates = warp::path("update");
+    let room_messages = "message";
+    let room_updates = "update";
     let room_handle_routes = room
         .and(warp::post())
         .and(warp::header::<String>(USER_TOKEN_HEADER))
@@ -204,21 +215,9 @@ async fn main() {
             .and(with_rooms(rooms.clone()))
             .and_then(handler::get_rooms_handler));
 
-    let room_messages_routes = room_messages
-        .and(warp::post())
-        .and(warp::path::param())
-        .and(warp::body::json())
-        .and(with_rooms(rooms.clone()))
-        .and(with_userid(users.clone()))
-        .and_then(handler::publish_to_room_handler);
+    let room_messages_routes = create_default_path(room_messages, rooms.clone(), users.clone()).and_then(handler::publish_to_room_handler);
 
-    let room_updates_routes = room_updates
-        .and(warp::post())
-        .and(warp::path::param())
-        .and(warp::body::json())
-        .and(with_rooms(rooms.clone()))
-        .and(with_userid(users.clone()))
-        .and_then(handler::update_room_state_handler);
+    let room_updates_routes = create_default_path(room_updates, rooms.clone(), users.clone()).and_then(handler::update_room_state_handler);
 
     let ws_route = warp::path("ws")
         .and(warp::ws())
