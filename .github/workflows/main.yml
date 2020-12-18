@@ -21,7 +21,7 @@ jobs:
         key: ${{ secrets.SSH_KEY }}
         passphrase: ${{ secrets.SSH_PASSWORD }}
         source: "."
-        target: "/root"
+        target: "/root/sterligov-game"
 
     - name: Executing remote  command
       uses: appleboy/ssh-action@master
