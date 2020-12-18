@@ -1,0 +1,43 @@
+# This is a basic workflow to help you get started with Actions
+
+name: Deploy
+
+on: [push]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v1
+
+    - name: Copy file via scp
+      uses: appleboy/scp-action@master       
+      with:
+        host: ${{ secrets.SSH_HOST }}
+        username: ${{ secrets.SSH_USERNAME }}
+        port: 22
+        key: ${{ secrets.SSH_KEY }}
+        passphrase: ${{ secrets.SSH_PASSWORD }}
+        source: "."
+        target: "/root/sterligov-game"
+
+    - name: Executing remote  command
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.SSH_HOST }}
+        username: ${{ secrets.SSH_USERNAME }}
+        port: 22
+        key: ${{ secrets.SSH_KEY }}
+        passphrase: ${{ secrets.SSH_PASSWORD }}
+        script: |
+           cd /root/sterligov-game/server
+           systemctl stop chessgameserver.service
+           cargo build --release
+           systemctl start chessgameserver.service
+           cd /root/sterligov-game/client
+           npm install
+           npm run build
+           systemctl restart nginx
+           
