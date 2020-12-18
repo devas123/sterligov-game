@@ -159,8 +159,8 @@ pub async fn client_connection(ws: WebSocket, id: String, user: User, rooms: Roo
 
  pub fn send_update(rh: &RoomHandle, upd: &impl Serialize) {
     for p in &rh.players {
-        if p.sender.is_some() {
-            if let Err(msg) = p.sender.as_ref().unwrap().send(Ok(serde_json::ser::to_string(&upd).map(Message::text).unwrap())) {
+        if let Some(sender) = p.sender.as_ref() {
+            if let Err(msg) = sender.send(Ok(serde_json::ser::to_string(&upd).map(Message::text).unwrap())) {
                 error!("Error while sending update to players. {:?}", msg)
             }
         }

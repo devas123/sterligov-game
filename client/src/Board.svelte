@@ -127,11 +127,11 @@ import EmptyTriangle from "./EmptyTriangle.svelte";
 
 <style>
   .main-svg {
-    min-height: 500px;
-    max-width: 750px;
-    max-height: 750px;
+    min-height: 400px;
+    min-width: 400px;
+    max-width: 800px;
+    max-height: 100%;
     width: auto;
-    height: 100%;
   }
   .big_circle {
     fill: rgb(175, 175, 175);

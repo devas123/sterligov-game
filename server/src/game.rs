@@ -159,7 +159,7 @@ impl GameState {
         }
         // println!("common_neighbors: {:?}", common_neighbors);
         if common_neighbors.len() == 1 {
-            let neighbor = common_neighbors.get(0).unwrap().clone();
+            let neighbor = common_neighbors[0].clone();
             if self.is_occupied(neighbor.0 as i32, neighbor.1 as i32)? {
                 return Ok(true);
             }
@@ -190,10 +190,13 @@ impl GameState {
         self.validate_path(&path)?;
         let (s1, s2) = path[0].clone();
         let (e1, e2) = path[path.len() - 1].clone();
-        let player = self.cones.remove(&(s1 as usize, s2 as usize));
-        self.cones.insert((e1 as usize, e2 as usize), player.unwrap());
-        let game_finished = self.is_all_cones_in_place(user_id)?;
-        Ok((path.clone().iter().map(|(x, y)| { (*x as usize, *y as usize) }).collect(), game_finished))
+        if let Some(player) = self.cones.remove(&(s1 as usize, s2 as usize)) {
+            self.cones.insert((e1 as usize, e2 as usize), player);
+            let game_finished = self.is_all_cones_in_place(user_id)?;
+            Ok((path.clone().iter().map(|(x, y)| { (*x as usize, *y as usize) }).collect(), game_finished))
+        } else {
+            Err(0)
+        }
     }
 
     pub fn validate_path(&self, path: &Vec<(i32, i32)>) -> std::result::Result<bool, usize> {

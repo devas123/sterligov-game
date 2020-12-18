@@ -1,20 +1,15 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { CONTENT_TYPE, X_USER_TOKEN } from "./const";
   import { push } from "svelte-spa-router";
-  import {
-    selectedRoom,
-    createdAt,
-    userId,
-    userName,
-    userToken,
-  } from "./stores";
+  import { createdAt, userId, userName, userToken } from "./stores";
   import type { RoomDesc } from "./model";
   import {
     addUserRequest,
-    createRoomRequest,
+clearToken,
+        createRoomRequest,
     getRoomsListRequest,
-    refreshTokenRequest,
+processToken,
+        refreshTokenRequest,
   } from "./functions";
 
   let roomName;
@@ -29,37 +24,29 @@
   };
 
   async function addUser(name: string) {
-    const response = await addUserRequest(name);
-    // console.log(response);
-    userToken.set(response.token);
-    userId.set(response.user_id);
-    localStorage.setItem("x-user-token", response.token);
-    localStorage.setItem("x-user-id", response.user_id);
-    localStorage.setItem("x-user-name", name);
-    localStorage.setItem("x-user-id-created-at", response.created_at);
+    if (name && name.length > 0 && name.length <= 15) {
+      const response = await addUserRequest(name);
+      // console.log(response);
+      userToken.set(response.token);
+      userId.set(response.user_id);
+      localStorage.setItem("x-user-token", response.token);
+      localStorage.setItem("x-user-id", response.user_id);
+      localStorage.setItem("x-user-name", name);
+      localStorage.setItem("x-user-id-created-at", response.created_at);
+    }
   }
 
   async function refresh(token: string) {
     return refreshTokenRequest(token)
       .catch((err) => {
-        // console.log("error while refreshing token", err);
-        localStorage.removeItem("x-user-token");
-        localStorage.removeItem("x-user-id");
-        localStorage.removeItem("x-user-name");
-        localStorage.removeItem("x-user-id-created-at");
-        Promise.reject();
+        clearToken()
       })
       .then((t) => {
         if (t) {
-          userToken.set(t.token);
-          createdAt.set(t.created_at);
-          userId.set(t.user_id);
-          userName.set(t.user_name);
-          localStorage.setItem("x-user-token", t.token);
-          localStorage.setItem("x-user-id", t.user_id);
-          localStorage.setItem("x-user-name", t.user_name);
-          localStorage.setItem("x-user-id-created-at", t.created_at);
+          processToken(t);
           // console.log("Refreshed user token successfully", t);
+        } else {
+          clearToken();
         }
         return Promise.resolve();
       });
@@ -133,6 +120,10 @@
   button {
     margin-left: 3px;
   }
+
+  .add-user-form {
+    margin-top: 1em;
+  }
 </style>
 
 <div class="controls">
@@ -146,7 +137,9 @@
           placeholder="Name"
           type="text" />
       </label>
-      <button on:click={async () => await addUser($userName)}>Go!</button>
+      <button
+        on:click={async () => await addUser($userName)}
+        disabled={!$userName || $userName.length === 0 || $userName.length > 15}>Go!</button>
     </div>
   {:else}
     <p>Your name is: {$userName}</p>
@@ -162,7 +155,8 @@
       </label>
       <button
         on:click={async () => await create_room(roomName, $userToken)}
-        disabled={!roomName}>Create room</button>
+        disabled={!roomName || roomName.length === 0 || roomName.length > 15}>Create
+        room</button>
       <button
         on:click={async () => {
           await getRoomsAndUpdate();
@@ -174,12 +168,8 @@
         <div class="room-row">
           <a href="#/room/{room.id}">{room.name}</a>
           <div class="fill" />
-          {#if room.game_started}
-          <span>Game started</span>
-          {/if}
-          {#if room.game_finished}
-          <span>Game finished</span>
-          {/if}
+          {#if room.game_started}<span>Game started</span>{/if}
+          {#if room.game_finished}<span>Game finished</span>{/if}
           <span>{room.number_of_player} players</span>
         </div>
       {/each}

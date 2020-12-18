@@ -10,9 +10,11 @@ use warp::filters::cors::CorsForbidden;
 use warp::hyper::StatusCode;
 use warp::reply::json;
 
-use crate::{HOST, Player, PORT, Result, RoomHandle, RoomList, TokenCreatedResponse, UserTokens, ws, User, RoomStateUpdate};
+use crate::{HOST, Player, PORT, Result, RoomHandle, RoomList, TokenCreatedResponse, UserTokens, ws, User, RoomStateUpdate, AddUserRequest};
 use crate::game::GameState;
 use crate::ws::send_update;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct JoinRoomRequest {
@@ -186,13 +188,17 @@ pub async fn create_room_handler(user_token: String, user_id_opt: Option<usize>,
         Some(id) => { id }
     };
     let room_name = body.room_name;
-    let room_id = Uuid::new_v4().simple().to_string();
-    let room = create_room(room_id.clone(), user_id.clone(), room_name, rooms).await;
-    Ok(json(&CreateRoomResponse {
-        room,
-        url: format!("ws://{}:{}/ws/{}/{}", HOST, PORT, room_id.clone(), user_token),
-        url_sockjs: format!("http://{}:{}/ws/{}/{}", HOST, PORT, room_id.clone(), user_token),
-    }))
+    if room_name.is_empty() || room_name.len() > 15 {
+        Err(warp::reject::reject())
+    } else {
+        let room_id = Uuid::new_v4().simple().to_string();
+        let room = create_room(room_id.clone(), user_id.clone(), room_name, rooms).await;
+        Ok(json(&CreateRoomResponse {
+            room,
+            url: format!("ws://{}:{}/ws/{}/{}", HOST, PORT, room_id.clone(), user_token),
+            url_sockjs: format!("http://{}:{}/ws/{}/{}", HOST, PORT, room_id.clone(), user_token),
+        }))
+    }
 }
 
 pub async fn get_players(query: RoomIdParameter, rooms: RoomList) -> Result<impl Reply> {
@@ -246,6 +252,17 @@ pub async fn refresh_token_handle(user: Option<User>, tokens: UserTokens) -> Res
             tokens.write().unwrap().insert(token.clone(), usr);
             Ok(warp::reply::json(&TokenCreatedResponse { token, created_at: Instant::now(), user_id, user_name}))
         }
+    }
+}
+
+pub async fn add_user_handle(request: AddUserRequest, users: UserTokens, users_counts: Arc<AtomicUsize>) -> Result<impl Reply> {
+    if request.name.is_empty() || request.name.len() > 15 {
+        Err(warp::reject())
+    } else {
+        let token = Uuid::new_v4().hyphenated().to_string();
+        let new_id = users_counts.as_ref().fetch_add(1, Ordering::Relaxed);
+        users.write().unwrap().insert(token.clone(), User { user_id: new_id.clone(), user_name: request.name.clone() });
+        Ok(warp::reply::json(&TokenCreatedResponse { token, created_at: Instant::now(), user_id: new_id, user_name: request.name }))
     }
 }
 
@@ -322,8 +339,12 @@ pub async fn health_handler() -> Result<impl Reply> {
 
 pub async fn ws_handler(ws: warp::ws::Ws, room_id: String, user: Option<User>, rooms: RoomList) -> Result<impl Reply> {
     let room = rooms.read().unwrap().get(&room_id).cloned();
-    match room {
-        Some(c) => Ok(ws.on_upgrade(move |socket| ws::client_connection(socket, room_id, user.unwrap(), rooms, c))),
-        None => Err(warp::reject::not_found())
+    if let Some(usr) = user {
+        match room {
+            Some(c) => Ok(ws.on_upgrade(move |socket| ws::client_connection(socket, room_id, usr, rooms, c))),
+            None => Err(warp::reject::not_found())
+        }
+    } else {
+        Err(warp::reject::not_found())
     }
 }

@@ -208,6 +208,7 @@
     display: flex;
     flex-direction: column;
     height: 100%;
+    padding-top: 1em;
   }
 
   .bold {

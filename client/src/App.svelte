@@ -10,8 +10,8 @@
     text-align: left;
     margin: 0 auto;
     background-color: rgb(221, 198, 167);
-    min-height: 500px;
-    min-width: 500px;
+    min-height: 600px;
+    min-width: 800px;
     padding-left: 1rem;
     padding-right: 1rem;
     border-radius: 3px;
