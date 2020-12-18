@@ -19,7 +19,7 @@ jobs:
         username: ${{ secrets.SSH_USERNAME }}
         port: 22
         key: ${{ secrets.SSH_KEY }}
-        passphrase: ${{${{ secrets.SSH_PASSWORD }}}}
+        passphrase: ${{ secrets.SSH_PASSWORD }}
         source: "."
         target: "/root"
 
