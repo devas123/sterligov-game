@@ -5,9 +5,22 @@ name: Deploy
 on: [push]
 
 jobs:
+  rustcmp:
+
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Build
+      working-directory: ./server
+      run: cargo build --verbose
+    - name: Run tests
+      working-directory: ./server
+      run: cargo test --verbose
+      
   build:
 
     runs-on: ubuntu-latest
+    needs: [rustcmp]
 
     steps:
     - uses: actions/checkout@v1
