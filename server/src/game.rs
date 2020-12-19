@@ -39,10 +39,10 @@ pub fn get_complementary(color: &usize) -> &'static usize {
     match *color {
         PURPLE => { &YELLOW }
         GREEN => { &RED }
-        ORANGE =>  { &BLUE }
-        YELLOW =>  { &PURPLE }
-        RED =>  { &GREEN }
-        BLUE =>  { &ORANGE }
+        ORANGE => { &BLUE }
+        YELLOW => { &PURPLE }
+        RED => { &GREEN }
+        BLUE => { &ORANGE }
         _ => &NEUTRAL
     }
 }
@@ -51,9 +51,11 @@ pub fn get_complementary(color: &usize) -> &'static usize {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameState {
     #[serde(serialize_with = "serialize_cones")]
-    pub cones: HashMap<(usize, usize), usize>, //(row, position, color)
-    pub players_colors: HashMap<usize, usize>, //(user_id, color)
-    pub moves: VecDeque<(usize, Vec<(usize, usize)>)> //(color, [path])
+    pub cones: HashMap<(usize, usize), usize>,
+    //(row, position, color)
+    pub players_colors: HashMap<usize, usize>,
+    //(user_id, color)
+    pub moves: VecDeque<(usize, Vec<(usize, usize)>)>, //(color, [path])
 }
 
 pub fn serialize_cones<S>(cones: &HashMap<(usize, usize), usize>, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
@@ -66,7 +68,6 @@ pub fn serialize_cones<S>(cones: &HashMap<(usize, usize), usize>, serializer: S)
 
 
 impl GameState {
-
     pub fn get_board_color(&self, row: &usize, col: &usize) -> std::result::Result<&'static usize, usize> {
         self.validate_dimensions(*row as i32, *col as i32)?;
         Ok(&POINTS[*row][*col])
@@ -127,24 +128,18 @@ impl GameState {
         Ok(true)
     }
 
-/*    fn remove_cone(&mut self, row: i32, col: i32) -> std::result::Result<bool, usize> {
-        let (r, c) = self.validate_dimensions(row, col)?;
-        self.cones.remove(&(r, c));
-        Ok(true)
-    }
-*/
     fn can_jump(&self, from: (i32, i32), to: (i32, i32)) -> std::result::Result<bool, usize> {
         let from_neighbors = self.get_neighbors(from.0, from.1)?;
         let to_valid = self.validate_dimensions(to.0, to.1)?;
-       // println!("From {:?}, to {:?},  Neighbors: {:?}", from, to, from_neighbors);
+        // println!("From {:?}, to {:?},  Neighbors: {:?}", from, to, from_neighbors);
         if from_neighbors.contains(&to_valid) || self.is_occupied(to.0, to.1)? {
-         //   println!("Here1");
+            //   println!("Here1");
             return Err(1);
         }
         let mut common_neighbors = Vec::new();
         for x in from_neighbors {
             let nn = self.get_neighbors(x.0 as i32, x.1 as i32)?;
-           // println!("x {:?},  Neighbors: {:?}", x, nn);
+            // println!("x {:?},  Neighbors: {:?}", x, nn);
             if nn.contains(&(from.0 as usize, from.1 as usize)) && nn.contains(&(to.0 as usize, to.1 as usize)) {
                 common_neighbors.push(x);
             }
@@ -175,7 +170,6 @@ impl GameState {
                 Ok(true)
             }
         }
-
     }
 
     pub fn update_cones(&mut self, path: &Vec<(i32, i32)>, user_id: &usize) -> std::result::Result<(Vec<(usize, usize)>, bool), usize> {
@@ -207,9 +201,9 @@ impl GameState {
                 return Err(0);
             }
             let neighbors = self.get_neighbors(prev.0, prev.1)?;
-           // println!("Neighbors: {:?}", neighbors);
+            // println!("Neighbors: {:?}", neighbors);
             return if neighbors.contains(&(next.0 as usize, next.1 as usize)) {
-               // println!("shifting 1 position, ok");
+                // println!("shifting 1 position, ok");
                 Ok(true)
             } else if self.can_jump(prev, next)? {
                 Ok(true)
@@ -260,7 +254,7 @@ impl GameState {
         let last_row = (POINT_COUNTS.len() - 1) as i32;
         let upper_row_points_count = if row < last_row { POINT_COUNTS[valid_row + 1] as i32 } else { -1 };
         let lower_row_points_count = if row > 0 { POINT_COUNTS[valid_row - 1] as i32 } else { -1 };
-        let current_row_points_count  = POINT_COUNTS[valid_row] as i32;
+        let current_row_points_count = POINT_COUNTS[valid_row] as i32;
         let up_shift: i32 = if row < last_row { upper_row_points_count - current_row_points_count } else { 1 };
         let down_shift: i32 = if row > 0 { lower_row_points_count - current_row_points_count } else { 1 };
         let us = GameState::calculate_shift(up_shift, row <= 10);
@@ -283,7 +277,7 @@ impl GameState {
         GameState {
             cones: Default::default(),
             players_colors: Default::default(),
-            moves: Default::default()
+            moves: Default::default(),
         }
     }
 }
@@ -293,6 +287,14 @@ mod tests {
     use std::iter::FromIterator;
 
     use super::*;
+
+    impl GameState {
+        fn remove_cone(&mut self, row: i32, col: i32) -> std::result::Result<bool, usize> {
+            let (r, c) = self.validate_dimensions(row, col)?;
+            self.cones.remove(&(r, c));
+            Ok(true)
+        }
+    }
 
     #[test]
     fn test_can_jump() {
@@ -321,11 +323,11 @@ mod tests {
 
     #[test]
     fn test_validate_path_regression() {
-        let mut  game_state = GameState::new().add_cones_for_color(PURPLE).unwrap();
+        let mut game_state = GameState::new().add_cones_for_color(PURPLE).unwrap();
         game_state.remove_cone(3, 3).unwrap();
         game_state.add_cone(6, 10, PURPLE).unwrap();
 
-        assert!(game_state.validate_path(&vec![(1, 1), (3,3 ), (5, 10), (7, 10)]).is_ok());
+        assert!(game_state.validate_path(&vec![(1, 1), (3, 3), (5, 10), (7, 10)]).is_ok());
     }
 
     #[test]
