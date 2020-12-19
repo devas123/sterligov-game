@@ -58,7 +58,7 @@ impl PlayerLeftUpdate {
 }
 
 //TODO: we have thread per connection here, maybe use queues/dispatching thread
-pub async fn client_connection(ws: WebSocket, id: String, user: User, rooms: RoomList, mut room: RoomHandle) {
+pub async fn client_connection(ws: WebSocket, room_id: String, user: User, rooms: RoomList, mut room: RoomHandle) {
     let (player_ws_sender, mut player_ws_receiver) = ws.split();
     let (player_sender, player_receiver) = mpsc::unbounded_channel();
 
@@ -91,14 +91,14 @@ pub async fn client_connection(ws: WebSocket, id: String, user: User, rooms: Roo
             color
         }).or(Some(*&room.players.len() + 1)).unwrap();
         let mut update = PlayerJoinedUpdate::new(
-            user.user_id ,
-            id.clone(),
+            user.user_id,
+            room_id.to_string(),
             vec![],
             user.user_name.clone(),
             color.clone().or(Some(default_color.clone())).unwrap(),
         );
         let player = Player {
-            sender: Some(player_sender),
+            sender: Some(player_sender.clone()),
             user_id: user.user_id,
             name: Some(user.user_name.clone()),
         };
@@ -117,10 +117,10 @@ pub async fn client_connection(ws: WebSocket, id: String, user: User, rooms: Roo
             }
 
         }
-        info!("User with id {} connected to room {}", user.user_id, id);
+        info!("User with id {} connected to room {}", user.user_id, room_id);
 
-        rooms.write().unwrap().insert(id.clone(), room);
-        match rooms.clone().write().unwrap().get(&id) {
+        rooms.write().unwrap().insert(room_id.clone(), room);
+        match rooms.clone().write().unwrap().get(room_id.as_str()) {
             None => {}
             Some(updated_room) => {
                 send_update(&updated_room, &update);
@@ -131,17 +131,17 @@ pub async fn client_connection(ws: WebSocket, id: String, user: User, rooms: Roo
             let msg = match result {
                 Ok(msg) => msg,
                 Err(e) => {
-                    error!("Error receiving ws message for id: {}): {}", id.clone(), e);
+                    error!("Error receiving ws message for id: {}): {}", room_id, e);
                     break;
                 }
             };
-            client_msg(&id, msg, &rooms).await;
+            client_msg(room_id.as_str(), &player_sender, msg, &rooms).await;
         }
         let mut remove_room = false;
-        if let Some(new_room) = rooms.write().unwrap().get_mut(&id) {
+        if let Some(new_room) = rooms.write().unwrap().get_mut(room_id.as_str()) {
             new_room.remove_player(user.user_id);
             remove_room = new_room.players.len() == 0;
-            info!("User {} disconnected from room {}", user.user_id, id);
+            info!("User {} disconnected from room {}", user.user_id, room_id);
             let upd = PlayerLeftUpdate::new(
                 user.user_id,
                 new_room.room_id.clone()
@@ -150,9 +150,9 @@ pub async fn client_connection(ws: WebSocket, id: String, user: User, rooms: Roo
         }
 
         if remove_room {
-            info!("Room {} has no members left, so it will be removed", id);
-            rooms.write().unwrap().remove(&id);
-            info!("Room {} removed", id);
+            info!("Room {} has no members left, so it will be removed", room_id);
+            rooms.write().unwrap().remove(room_id.as_str());
+            info!("Room {} removed", room_id);
         }
     }
 }
@@ -167,7 +167,7 @@ pub async fn client_connection(ws: WebSocket, id: String, user: User, rooms: Roo
     }
 }
 
-async fn client_msg(id: &str, msg: Message, rooms: &RoomList) {
+async fn client_msg(id: &str, sender: &mpsc::UnboundedSender<std::result::Result<Message, warp::Error>>,msg: Message, rooms: &RoomList) {
     info!("Received message from {}: {:?}", id, msg);
     let message = match msg.to_str() {
         Ok(v) => v,
@@ -175,6 +175,9 @@ async fn client_msg(id: &str, msg: Message, rooms: &RoomList) {
     };
 
     if message == "ping" || message == "ping\n" {
+        if let Err(err) = sender.send(Ok(Message::text("pong"))) {
+            error!("Error while sending pong message. {:?}", err)
+        }
         return;
     }
 

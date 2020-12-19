@@ -158,7 +158,7 @@ where T: DeserializeOwned + Send {
 
 #[tokio::main]
 async fn main() {
-    env::set_var("RUST_LOG", "debug");
+    env::set_var("RUST_LOG", "info");
     env_logger::init();
     let rooms: RoomList = Arc::new(RwLock::new(HashMap::new()));
     let users_count = Arc::new(AtomicUsize::new(0));
