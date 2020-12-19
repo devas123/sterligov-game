@@ -29,6 +29,8 @@
   let my_color: number;
   let players_colors = new Map<number, number>();
   let room_state: RoomDesc;
+  let tm;
+
   export let params: { id: any };
   export let highlightedPath = [];
 
@@ -86,7 +88,73 @@
 
   const roomRes = roomResolveRequest(params.id).then((r) => (room_state = r));
 
+  function handleWsEvent(event) {
+    if (event.data === "pong") {
+      pong();
+      return;
+    }
+    console.log("Message from server", event.data);
+    const update = JSON.parse(event.data);
+    const { name } = update;
+    switch (name) {
+      case "player_joined": {
+        let { user_id, player_cones, player_name, player_color } = update;
+        if (!players.find((p) => p.user_id === user_id)) {
+          players = [
+            ...players,
+            { user_id, color: player_color, name: player_name },
+          ];
+        }
+
+        const new_cones = { ...cones };
+        for (const key in new_cones) {
+          if (Object.prototype.hasOwnProperty.call(new_cones, key)) {
+            const element = new_cones[key];
+            if (element === user_id) {
+              delete new_cones[key];
+            }
+          }
+        }
+        for (let index = 0; index < player_cones.length; index++) {
+          new_cones[
+            `${player_cones[index][0]},${player_cones[index][1]}`
+          ] = user_id;
+        }
+        cones = new_cones;
+        // console.log(cones);
+        break;
+      }
+      case "player_left": {
+        let { user_id } = update;
+        players = players.filter((p) => p.user_id !== user_id);
+        next_player_to_move %= players.length;
+        break;
+      }
+      case "move_made":
+        let { by_user_id, path, next_player, game_finished } = update;
+        const p = players.find((p) => p.user_id === by_user_id);
+        moves = [...moves, { path, by: p }];
+        const l = path.length;
+        const m = cones[`${path[0][0]},${path[0][1]}`];
+        delete cones[`${path[0][0]},${path[0][1]}`];
+        let new_cones = { ...cones };
+        new_cones[`${path[l - 1][0]},${path[l - 1][1]}`] = m;
+        cones = new_cones;
+        next_player_to_move = next_player % players.length;
+        if (game_finished) {
+          room_state = { ...room_state, game_finished, winner: by_user_id };
+        }
+        break;
+      case "room_state_update":
+        const { room: r } = update as { room: RoomDesc };
+        room_state = { ...r };
+    }
+  }
+
   onDestroy(() => {
+    if (tm) {
+      clearTimeout(tm);
+    }
     if (socket) {
       try {
         socket.close();
@@ -96,107 +164,46 @@
     }
   });
 
+  function pong() {
+    clearTimeout(tm);
+  }
+
+  const handleWsConnect = (ping) => async (event) => {
+    console.log("Connected to server", event);
+    setInterval(ping, 10000);
+    await refreshRoomState().catch(console.error);
+  };
+
   onMount(async () => {
-    let tm;
-
-    const socketConnn = async () => {
-      socket = createWebSocketForRoomRequest($userToken, params.id);
-      function ping() {
-        socket.send("ping");
-        tm = setTimeout(function () {
-          console.error("Websocket connection lost.");
-        }, 5000);
-      }
-
-      function pong() {
+    socket = createWebSocketForRoomRequest($userToken, params.id);
+    function ping() {
+      socket.send("ping");
+      if (tm) {
         clearTimeout(tm);
       }
-
-      // Connection opened
-      socket.addEventListener("open", function (event) {
-        console.log("Connected to server", event);
-        setInterval(ping, 10000);
-      });
-
-      // Listen for messages
-      socket.addEventListener("message", function (event) {
-        console.log("Message from server", event.data);
-        if (event.data === "pong") {
-          console.log("Pong!");
-          pong();
-          return;
-        }
-        const update = JSON.parse(event.data);
-        const { name } = update;
-        switch (name) {
-          case "player_joined": {
-            let { user_id, player_cones, player_name, player_color } = update;
-            if (!players.find((p) => p.user_id === user_id)) {
-              players = [
-                ...players,
-                { user_id, color: player_color, name: player_name },
-              ];
-            }
-
-            const new_cones = { ...cones };
-            for (const key in new_cones) {
-              if (Object.prototype.hasOwnProperty.call(new_cones, key)) {
-                const element = new_cones[key];
-                if (element === user_id) {
-                  delete new_cones[key];
-                }
-              }
-            }
-            for (let index = 0; index < player_cones.length; index++) {
-              new_cones[
-                `${player_cones[index][0]},${player_cones[index][1]}`
-              ] = user_id;
-            }
-            cones = new_cones;
-            // console.log(cones);
-            break;
-          }
-          case "player_left": {
-            let { user_id } = update;
-            players = players.filter((p) => p.user_id !== user_id);
-            next_player_to_move %= players.length;
-            break;
-          }
-          case "move_made":
-            let { by_user_id, path, next_player, game_finished } = update;
-            const p = players.find((p) => p.user_id === by_user_id);
-            moves = [...moves, { path, by: p }];
-            const l = path.length;
-            const m = cones[`${path[0][0]},${path[0][1]}`];
-            delete cones[`${path[0][0]},${path[0][1]}`];
-            let new_cones = { ...cones };
-            new_cones[`${path[l - 1][0]},${path[l - 1][1]}`] = m;
-            cones = new_cones;
-            next_player_to_move = next_player % players.length;
-            if (game_finished) {
-              room_state = { ...room_state, game_finished, winner: by_user_id };
-            }
-            break;
-          case "room_state_update":
-            const { room: r } = update as { room: RoomDesc };
-            room_state = { ...r };
-        }
-      });
-    };
-
-    await socketConnn().catch(console.error);
-    setTimeout(async () => {
-      const received = await getRoomPlayersRequest(params.id);
-      players = [...players, ...received].filter(
-        (value, index, arr) =>
-          arr.findIndex((vv) => value.user_id === vv.user_id) === index
-      );
-      // console.log(`Players: ${JSON.stringify(players)}`);
-      const gameStateRes = await gameStateRequest(params.id);
-      const cones_res = gameStateRes || {};
-      cones = { ...cones, ...cones_res.cones };
-    }, 0);
+      tm = setTimeout(function () {
+        console.error("Websocket connection lost.");
+        socket = createWebSocketForRoomRequest($userToken, params.id);
+        socket.addEventListener("open", handleWsConnect(ping));
+        // Listen for messages
+        socket.addEventListener("message", handleWsEvent);
+      }, 5000);
+    }
+    socket.addEventListener("open", handleWsConnect(ping));
+    socket.addEventListener("message", handleWsEvent);
   });
+
+  async function refreshRoomState() {
+    const received = await getRoomPlayersRequest(params.id);
+    players = [...players, ...received].filter(
+      (value, index, arr) =>
+        arr.findIndex((vv) => value.user_id === vv.user_id) === index
+    );
+    // console.log(`Players: ${JSON.stringify(players)}`);
+    const gameStateRes = await gameStateRequest(params.id);
+    const cones_res = gameStateRes || {};
+    cones = { ...cones, ...cones_res.cones };
+  }
 
   function getNextPlayer(players: any[], next_move: number) {
     return players[next_move];
@@ -283,6 +290,7 @@
       {players_colors} />
     <div class="controls">
       {#if +$userId == room_state.created_by}
+        <!-- svelte-ignore empty-block -->
         {#if !room_state.game_started && !room_state.game_finished}
           <button on:click={startGame}>Start game</button>
         {:else if !room_state.game_started}{/if}
