@@ -1,11 +1,12 @@
 use futures::{FutureExt, StreamExt};
-use log::{error, info};
+use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use serde_json::from_str;
 use tokio::sync::mpsc;
 use warp::filters::ws::{Message, WebSocket};
 
-use crate::{Player, RoomHandle, RoomList, User};
+use crate::{RoomHandle, RoomList, User};
+use crate::model::Player;
 
 #[derive(Deserialize, Debug)]
 pub struct TopicsRequest {
@@ -27,6 +28,7 @@ pub struct PlayerLeftUpdate {
     name: String,
     user_id: usize,
     room_id: String,
+    next_turn: usize,
 }
 
 impl PlayerJoinedUpdate {
@@ -48,11 +50,13 @@ impl PlayerJoinedUpdate {
 
 impl PlayerLeftUpdate {
     fn new(user_id: usize,
-           room_id: String) -> PlayerLeftUpdate {
+           room_id: String,
+           next_turn: usize) -> PlayerLeftUpdate {
         return PlayerLeftUpdate {
             name: "player_left".to_string(),
             user_id,
-            room_id
+            room_id,
+            next_turn,
         };
     }
 }
@@ -74,13 +78,13 @@ pub async fn client_connection(ws: WebSocket, room_id: String, user: User, rooms
     } else if room.game_started && !(room.game_state.is_some() && room.game_state.as_ref().unwrap().players_colors.get(&user.user_id).is_some()) {
         error!("Game is already started.");
     } else {
-        let color = room.game_state.as_ref().map(|gs| {gs.players_colors.get(&user.user_id).cloned()}).flatten();
+        let color = room.game_state.as_ref().map(|gs| { gs.players_colors.get(&user.user_id).cloned() }).flatten();
         let default_color = room.game_state.as_ref().map(|gs| {
             let mut color = 1;
             while color < 7 {
-                info!("Getting default color: {:?}", gs.players_colors);
+                info!("Getting default color, current colors: {:?}", gs.players_colors);
                 for (pl, pl_col) in gs.players_colors.iter() {
-                    info!("Getting default color: user: {}, user_color: {}, color: {}", *pl, *pl_col, color);
+                    info!("Getting default color: user: {}, already used color: {}, testing color: {}", *pl, *pl_col, color);
                     if *pl_col == color {
                         color += 1;
                         continue;
@@ -106,7 +110,7 @@ pub async fn client_connection(ws: WebSocket, room_id: String, user: User, rooms
         if let Some(gs) = room.game_state.as_mut() {
             gs.players_colors.insert(user.user_id, color.clone().or(Some(default_color.clone())).unwrap());
             if color.is_none() {
-                if let Err(_) = gs.add_cones(default_color, user.user_id).map(|new_gs| {
+                if let Err(_) = gs.add_cones(default_color).map(|new_gs| {
                     update.player_cones = new_gs.get_cones(&user.user_id);
                     room.game_state = Some(new_gs);
                 }) {
@@ -115,7 +119,6 @@ pub async fn client_connection(ws: WebSocket, room_id: String, user: User, rooms
             } else {
                 update.player_cones = gs.get_cones(&user.user_id);
             }
-
         }
         info!("User with id {} connected to room {}", user.user_id, room_id);
 
@@ -141,10 +144,13 @@ pub async fn client_connection(ws: WebSocket, room_id: String, user: User, rooms
         if let Some(new_room) = rooms.write().unwrap().get_mut(room_id.as_str()) {
             new_room.remove_player(user.user_id);
             remove_room = new_room.players.len() == 0;
+            let new_turn = if remove_room  { 0 } else { new_room.active_player % new_room.players.len() };
+            new_room.active_player = new_turn;
             info!("User {} disconnected from room {}", user.user_id, room_id);
             let upd = PlayerLeftUpdate::new(
                 user.user_id,
-                new_room.room_id.clone()
+                new_room.room_id.clone(),
+                new_turn
             );
             send_update(new_room, &upd);
         }
@@ -157,7 +163,7 @@ pub async fn client_connection(ws: WebSocket, room_id: String, user: User, rooms
     }
 }
 
- pub fn send_update(rh: &RoomHandle, upd: &impl Serialize) {
+pub fn send_update(rh: &RoomHandle, upd: &impl Serialize) {
     for p in &rh.players {
         if let Some(sender) = p.sender.as_ref() {
             if let Err(msg) = sender.send(Ok(serde_json::ser::to_string(&upd).map(Message::text).unwrap())) {
@@ -167,8 +173,8 @@ pub async fn client_connection(ws: WebSocket, room_id: String, user: User, rooms
     }
 }
 
-async fn client_msg(id: &str, sender: &mpsc::UnboundedSender<std::result::Result<Message, warp::Error>>,msg: Message, rooms: &RoomList) {
-    info!("Received message from {}: {:?}", id, msg);
+async fn client_msg(id: &str, sender: &mpsc::UnboundedSender<std::result::Result<Message, warp::Error>>, msg: Message, rooms: &RoomList) {
+    debug!("Received message from {}: {:?}", id, msg);
     let message = match msg.to_str() {
         Ok(v) => v,
         Err(_) => return

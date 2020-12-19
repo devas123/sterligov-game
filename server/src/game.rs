@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use serde::{Deserialize, Serialize, Serializer};
 use serde::ser::SerializeMap;
@@ -51,8 +51,9 @@ pub fn get_complementary(color: &usize) -> &'static usize {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameState {
     #[serde(serialize_with = "serialize_cones")]
-    pub cones: HashMap<(usize, usize), usize>, //(row, position, user_id)
-    pub players_colors: HashMap<usize, usize> //(user_id, color)
+    pub cones: HashMap<(usize, usize), usize>, //(row, position, color)
+    pub players_colors: HashMap<usize, usize>, //(user_id, color)
+    pub moves: VecDeque<(usize, Vec<(usize, usize)>)> //(color, [path])
 }
 
 pub fn serialize_cones<S>(cones: &HashMap<(usize, usize), usize>, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
@@ -71,19 +72,19 @@ impl GameState {
         Ok(&POINTS[*row][*col])
     }
 
-    pub fn add_cones(&self, color: usize, user_id: usize) -> std::result::Result<GameState, usize> {
-        if self.cones.iter().any(|((_, _), user)| { *user == user_id }) {
+    pub fn add_cones(&self, color: usize) -> std::result::Result<GameState, usize> {
+        if self.cones.iter().any(|((_, _), c)| { *c == color }) {
             return Ok(self.clone());
         }
-        self.add_cones_for_color(color, user_id)
+        self.add_cones_for_color(color)
     }
 
-    fn add_cones_for_color(&self, color_number: usize, user_id: usize) -> std::result::Result<GameState, usize> {
+    fn add_cones_for_color(&self, color_number: usize) -> std::result::Result<GameState, usize> {
         let mut gs = self.clone();
         for (row, cols) in POINTS.iter().enumerate() {
             for (col, color) in cols.iter().enumerate() {
                 if *color == color_number {
-                    gs.add_cone(row as i32, col as i32, user_id)?;
+                    gs.add_cone(row as i32, col as i32, *color)?;
                 }
             }
         }
@@ -92,9 +93,11 @@ impl GameState {
 
     pub fn get_cones(&self, user_id: &usize) -> Vec<(usize, usize)> {
         let mut result = Vec::new();
-        for (pair, uid) in &self.cones {
-            if *uid == *user_id {
-                result.push(pair.clone())
+        if let Some(color) = self.players_colors.get(user_id) {
+            for (pair, c) in &self.cones {
+                if *c == *color {
+                    result.push(pair.clone())
+                }
             }
         }
         result
@@ -109,38 +112,27 @@ impl GameState {
         Ok((row as usize, position as usize))
     }
 
-    pub fn validate_cone_position(&self, row: i32, position: i32, color: usize) -> std::result::Result<bool, usize> {
-        let (r, c) = self.validate_dimensions(row, position)?;
-        if let Some(c) = self.cones.get(&(r, c)) {
-            if *c != color {
-                return Err(0);
-            }
-        } else {
-            return Err(0);
-        }
-        Ok(true)
-    }
 
     pub fn is_occupied(&self, row: i32, position: i32) -> std::result::Result<bool, usize> {
         let (r, c) = self.validate_dimensions(row, position)?;
         return Ok(self.cones.get(&(r, c)).is_some());
     }
 
-    pub fn add_cone(&mut self, row: i32, col: i32, user_id: usize) -> std::result::Result<bool, usize> {
+    pub fn add_cone(&mut self, row: i32, col: i32, color: usize) -> std::result::Result<bool, usize> {
         let (r, c) = self.validate_dimensions(row, col)?;
         if self.cones.contains_key(&(r, c)) {
             return Err(0);
         }
-        self.cones.insert((r, c).clone(), user_id.clone());
+        self.cones.insert((r, c).clone(), color.clone());
         Ok(true)
     }
 
-    pub fn remove_cone(&mut self, row: i32, col: i32) -> std::result::Result<bool, usize> {
+/*    fn remove_cone(&mut self, row: i32, col: i32) -> std::result::Result<bool, usize> {
         let (r, c) = self.validate_dimensions(row, col)?;
         self.cones.remove(&(r, c));
         Ok(true)
     }
-
+*/
     fn can_jump(&self, from: (i32, i32), to: (i32, i32)) -> std::result::Result<bool, usize> {
         let from_neighbors = self.get_neighbors(from.0, from.1)?;
         let to_valid = self.validate_dimensions(to.0, to.1)?;
@@ -174,9 +166,9 @@ impl GameState {
             }
             Some(color) => {
                 let complementary_color = get_complementary(color);
-                for ((r, c), usr_id) in self.cones.iter() {
+                for ((r, c), clr) in self.cones.iter() {
                     let board_color = self.get_board_color(r, c)?;
-                    if *usr_id == *user_id && *board_color != *complementary_color {
+                    if *clr == *color && *board_color != *complementary_color {
                         return Ok(false);
                     }
                 }
@@ -190,8 +182,13 @@ impl GameState {
         self.validate_path(&path)?;
         let (s1, s2) = path[0].clone();
         let (e1, e2) = path[path.len() - 1].clone();
-        if let Some(player) = self.cones.remove(&(s1 as usize, s2 as usize)) {
-            self.cones.insert((e1 as usize, e2 as usize), player);
+        if let Some(color) = self.cones.remove(&(s1 as usize, s2 as usize)) {
+            self.cones.insert((e1 as usize, e2 as usize), color);
+            if self.moves.len() > 10 {
+                self.moves.pop_front();
+            }
+            let cloned_path = path.iter().map(|(x, y)| { (*x as usize, *y as usize) }).collect();
+            self.moves.push_back((color, cloned_path));
             let game_finished = self.is_all_cones_in_place(user_id)?;
             Ok((path.clone().iter().map(|(x, y)| { (*x as usize, *y as usize) }).collect(), game_finished))
         } else {
@@ -281,21 +278,12 @@ impl GameState {
         Ok(result)
     }
 
-    pub fn get_possible_steps(&self, pos: (i32, i32)) -> std::result::Result<Vec<(usize, usize)>, &'static str> {
-        match self.validate_dimensions(pos.0, pos.1) {
-            Ok(_) => {
-                Ok(Vec::new())
-            }
-            Err(_) => {
-                Err("wrong dimensions.")
-            }
-        }
-    }
 
     pub fn new() -> GameState {
         GameState {
             cones: Default::default(),
-            players_colors: Default::default()
+            players_colors: Default::default(),
+            moves: Default::default()
         }
     }
 }
@@ -305,16 +293,6 @@ mod tests {
     use std::iter::FromIterator;
 
     use super::*;
-
-    #[test]
-    fn test_validate_pos() {
-        let mut game_state = GameState::new();
-        assert!(game_state.add_cone(5, 6, YELLOW).is_ok());
-        assert!(game_state.add_cone(4, 6, YELLOW).is_err());
-        assert!(game_state.validate_cone_position(5, 6, YELLOW).is_ok());
-        assert_ne!(true, game_state.validate_cone_position(5, 8, YELLOW).is_ok());
-        assert_ne!(true, game_state.validate_cone_position(4, 8, YELLOW).is_ok());
-    }
 
     #[test]
     fn test_can_jump() {
@@ -343,7 +321,7 @@ mod tests {
 
     #[test]
     fn test_validate_path_regression() {
-        let mut  game_state = GameState::new().add_cones_for_color(PURPLE, 123).unwrap();
+        let mut  game_state = GameState::new().add_cones_for_color(PURPLE).unwrap();
         game_state.remove_cone(3, 3).unwrap();
         game_state.add_cone(6, 10, PURPLE).unwrap();
 

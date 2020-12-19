@@ -12,7 +12,7 @@ import EmptyTriangle from "./EmptyTriangle.svelte";
   const dispatch = createEventDispatcher();
 
   function select(row: number, col: number) {
-    const my_cone = getConeColorNumber(cones, players_colors, row, col);
+    const my_cone = getConeColorNumber(cones, row, col);
     if (my_color === my_cone || (!my_cone && my_move)) {
       const e = {
         row,
@@ -31,7 +31,6 @@ import EmptyTriangle from "./EmptyTriangle.svelte";
   export let cones = {};
   export let selectedCones = [];
   export let highlightedPath = [];
-  export let players_colors = new Map<number, number>();
   let dot_radius = 3;
   let cone_radius = 8;
   function getXCoordinate(col: number, colSize: number, width: number) {
@@ -72,20 +71,18 @@ import EmptyTriangle from "./EmptyTriangle.svelte";
 
   function getConeColor(
     cones: { [x: string]: number },
-    players_colors: Map<number, number>,
     row: number,
     col: number
   ) {
-    return getColorString(getConeColorNumber(cones, players_colors, row, col));
+    return getColorString(getConeColorNumber(cones, row, col));
   }
 
   function getConeColorNumber(
     cones: { [x: string]: number },
-    players_colors: Map<number, number>,
     row: number,
     col: number
   ) {
-    return players_colors.get(cones[`${row},${col}`]);
+    return cones[`${row},${col}`];
   }
 
   const triangle = (component: any, a: number[], b: number[], c: number[], color: string) => {
@@ -197,10 +194,10 @@ import EmptyTriangle from "./EmptyTriangle.svelte";
           cx={getXCoordinate(point, p, width)}
           cy={getYCoordinate(i, height)}
           r={cone_radius}
-          fill={getConeColor(cones, players_colors, i, point)}
+          fill={getConeColor(cones, i, point)}
           stroke-width="1"
           stroke="black"
-          class={(isCone(cones, i, point) ? ('cone' + (isSelected(selectedCones, i, point) ? ' selected' : '') + (my_color == getConeColorNumber(cones, players_colors, i, point) && my_move ? ' my-cone' : '')) : 'select-area')}
+          class={(isCone(cones, i, point) ? ('cone' + (isSelected(selectedCones, i, point) ? ' selected' : '') + (my_color == getConeColorNumber(cones, i, point) && my_move ? ' my-cone' : '')) : 'select-area')}
           on:click={(_e) => select(i, point)} />
     {/each}
   {/each}

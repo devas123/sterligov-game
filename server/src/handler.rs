@@ -3,110 +3,18 @@ use std::error::Error;
 use std::time::Instant;
 
 use log::{error, info};
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use warp::{Rejection, Reply};
 use warp::filters::cors::CorsForbidden;
 use warp::hyper::StatusCode;
 use warp::reply::json;
 
-use crate::{HOST, Player, PORT, Result, RoomHandle, RoomList, TokenCreatedResponse, UserTokens, ws, User, RoomStateUpdate, AddUserRequest};
+use crate::{HOST, PORT, Result, RoomHandle, RoomList, UserTokens, ws, User};
 use crate::game::GameState;
 use crate::ws::send_update;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct JoinRoomRequest {
-    pub user_id: usize,
-    pub room_id: usize,
-}
-
-#[derive(Deserialize, Debug)]
-pub struct CreateRoomRequest {
-    room_name: String
-}
-
-#[derive(Deserialize, Debug, Clone)]
-pub struct PublishToARoomRequest {
-    path: Vec<Vec<i32>>,
-    calculate_path: bool
-}
-
-#[derive(Deserialize, Debug, Clone)]
-pub struct UpdateRoomStateRequest {
-    start: bool
-}
-
-#[derive(Serialize, Debug)]
-pub struct CreateRoomResponse {
-    room: RoomDesc,
-    url: String,
-    url_sockjs: String,
-}
-
-#[derive(Serialize, Clone, Debug)]
-pub struct RoomDesc {
-    id: String,
-    name: String,
-    pub winner: Option<usize>,
-    pub created_by: usize,
-    #[serde(with = "serde_millis")]
-    pub created_time: Instant,
-    pub game_started: bool,
-    pub game_finished: bool,
-    pub active_player: usize,
-    pub number_of_player: usize,
-}
-
-#[derive(Debug)]
-struct UserNotFound;
-
-#[derive(Serialize)]
-struct ErrorMessage {
-    code: u16,
-    message: String,
-}
-
-#[derive(Serialize)]
-struct PlayerDesc {
-    name: String,
-    color: usize,
-    user_id: usize,
-}
-
-#[derive(Deserialize)]
-pub struct RoomIdParameter {
-    pub room_id: String
-}
-
-impl warp::reject::Reject for UserNotFound {}
-
-impl PlayerDesc {
-    fn from_player(p: &Player, color: usize) -> PlayerDesc {
-        PlayerDesc {
-            name: p.name.as_ref().cloned().or_else(|| { Some("Player".to_string()) }).unwrap(),
-            color,
-            user_id: p.user_id,
-        }
-    }
-}
-
-impl RoomDesc {
-    pub fn from_room(rh: &RoomHandle) -> RoomDesc {
-        RoomDesc {
-            id: rh.room_id.clone(),
-            winner: rh.winner.clone(),
-            name: rh.name.clone(),
-            created_by: rh.created_by,
-            created_time: rh.created_time,
-            game_started: rh.game_started,
-            game_finished: rh.game_finished,
-            active_player: rh.active_player,
-            number_of_player: rh.players.len(),
-        }
-    }
-}
+use crate::model::{TokenCreatedResponse, AddUserRequest, RoomStateUpdate, RoomDesc, UpdateRoomStateRequest, UserNotFound, PublishToARoomRequest, ErrorMessage, CreateRoomRequest, CreateRoomResponse, RoomIdParameter, PlayerDesc};
 
 pub async fn get_rooms_handler(rooms: RoomList) -> Result<impl Reply> {
     let r: Vec<RoomDesc> = rooms.read().unwrap().iter().map(|(_, v)| { RoomDesc::from_room(v) }).collect();
@@ -289,10 +197,12 @@ async fn create_room(room_id: String, user_id: usize, room_name: String, rooms: 
 async fn publish_to_room(room_id: String, user_id: usize, rooms: RoomList, request: PublishToARoomRequest) -> Result<&'static str> {
     info!("Make a move, room: {}, user_id: {}, message: {:?}", room_id, user_id, request);
     if request.path.len() < 2 {
+        error!("Path too short.");
         return Err(warp::reject());
     } else {
         for x in request.path.iter() {
             if x.len() != 2 {
+                error!("Path invalid.");
                 return Err(warp::reject());
             }
         }
@@ -301,19 +211,24 @@ async fn publish_to_room(room_id: String, user_id: usize, rooms: RoomList, reque
     if let Some(r) = rooms.clone().try_write().unwrap().get_mut(&room_id) {
         info!("Found the room: {}, created_by {} at {:?}", r.name, r.created_by, r.created_time);
         for (ind, player) in r.players.iter().enumerate() {
-            info!("Looking at player {}, current turn is: {}", ind, r.active_player);
+            info!("Looking at player (user_id: {}, number {}), current turn is: {}", player.user_id, ind, r.active_player);
             if user_id == player.user_id && ind == r.active_player {
                 info!("Player {} can make a move.", ind);
-                if let Ok(msg) = r.make_a_move(transformed, user_id) {
-                    send_update(r, &msg);
-                } else {
-                    error!("Error while making a move.")
+                match r.make_a_move(transformed, user_id) {
+                    Ok(msg) => {
+                        send_update(r, &msg);
+                        break;
+                    }
+                    Err(e) => {
+                        error!("Error while making a move: {}", e);
+                        return Err(warp::reject());
+                    }
                 }
-                break;
             }
         }
     } else {
-        error!("Message not sent!!!!!111")
+        error!("Message not sent!!!!!111");
+        return Err(warp::reject());
     }
     info!("Finished.");
     Ok("ok")

@@ -4,6 +4,12 @@ export interface Player {
   name: string;
 }
 
+export interface Move {
+  by: Player,
+  path: number[][],
+  
+}
+
 export interface RoomDesc {
   id: string;
   name: string;

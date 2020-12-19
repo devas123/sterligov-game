@@ -3,143 +3,22 @@ use std::convert::Infallible;
 use std::env;
 use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicUsize};
-use std::time::Instant;
 
 use lru_time_cache::LruCache;
-use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc;
-use warp::{Filter, Rejection, ws::Message};
+use warp::{Filter, Rejection};
 
-use crate::game::GameState;
-use crate::handler::RoomDesc;
-use log::error;
+use model::RoomDesc;
 use serde::de::DeserializeOwned;
+use model::{RoomHandle, User};
 
 mod handler;
 mod ws;
 mod game;
+mod model;
 
 const HOST: &str = "127.0.0.1";
 const PORT: usize = 8000;
 const USER_TOKEN_HEADER: &str = "X-User-Token";
-
-#[derive(Debug, Clone)]
-pub struct RoomHandle {
-    pub room_id: String,
-    pub winner: Option<usize>,
-    pub created_by: usize,
-    pub created_time: Instant,
-    pub name: String,
-    pub game_started: bool,
-    pub game_finished: bool,
-    pub active_player: usize,
-    pub game_state: Option<GameState>,
-    pub players: Vec<Player>,
-}
-
-#[derive(Deserialize)]
-pub struct AddUserRequest {
-    name: String
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct RoomUpdate {
-    name: String,
-    pub by_user_id: usize,
-    pub path: Vec<(usize, usize)>,
-    pub next_player: usize,
-    pub game_finished: bool
-}
-
-impl RoomUpdate {
-    fn new_with_finished(by_user_id: usize,
-           path: Vec<(usize, usize)>,
-           next_player: usize,
-           game_finished: bool) -> RoomUpdate {
-        RoomUpdate {
-            name: "move_made".to_string(),
-            by_user_id,
-            path,
-            next_player,
-            game_finished
-        }
-    }
-}
-
-
-
-#[derive(Debug, Clone, Serialize)]
-struct RoomStateUpdate {
-    name: String,
-    pub room: RoomDesc
-}
-
-impl RoomStateUpdate {
-    fn new(room: &RoomHandle) -> RoomStateUpdate {
-        RoomStateUpdate {
-            name: "room_state_update".to_string(),
-            room: RoomDesc::from_room(room)
-        }
-    }
-}
-
-
-impl RoomHandle {
-    pub fn remove_player(&mut self, user_id: usize) {
-        for (ind, p) in self.players.iter().enumerate() {
-            if p.user_id == user_id {
-                self.players.remove(ind);
-                break;
-            }
-        }
-    }
-
-    pub fn make_a_move(&mut self, path: Vec<(i32, i32)>, user_id: usize) -> std::result::Result<RoomUpdate, usize> {
-        if let Some(gs) = self.game_state.as_mut() {
-            let next = (self.active_player + 1) % self.players.len();
-            let p = (path[0].0 as usize, path[0].1 as usize);
-            if let Some(usr) = gs.cones.get(&p) {
-                if *usr == user_id {
-                    let update = gs.update_cones(&path, &user_id)
-                        .map(|(path, game_finished)| {
-                            self.active_player = next;
-                            if game_finished {
-                                self.winner = Some(user_id.clone());
-                                self.game_finished = true;
-                            }
-                            RoomUpdate::new_with_finished(user_id, path, next.clone(), game_finished)
-                        });
-                    return update;
-                }
-            } else {
-                error!("Could not find user {} in cones at position: {:?}. Cones: {:?}", user_id, p, gs.cones);
-            }
-        }
-        Err(0)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Player {
-    pub user_id: usize,
-    pub name: Option<String>,
-    pub sender: Option<mpsc::UnboundedSender<std::result::Result<Message, warp::Error>>>,
-}
-
-#[derive(Serialize)]
-pub struct TokenCreatedResponse {
-    pub token: String,
-    #[serde(with = "serde_millis")]
-    pub created_at: Instant,
-    pub user_id: usize,
-    pub user_name: String,
-}
-
-#[derive(Clone)]
-pub struct User {
-    pub user_id: usize,
-    pub user_name: String,
-}
 
 
 type Result<T> = std::result::Result<T, Rejection>;

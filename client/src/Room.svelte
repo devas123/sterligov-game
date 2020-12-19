@@ -1,15 +1,10 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import Board from "./Board.svelte";
-  import {
-    CONTENT_TYPE,
-    getColorString,
-    getColorValue,
-    X_USER_TOKEN,
-  } from "./const";
+  import { getColorString, getColorValue } from "./const";
   import { userId, userToken } from "./stores";
   import { pop } from "svelte-spa-router";
-  import type { Player, RoomDesc } from "./model";
+  import type { Move, Player, RoomDesc } from "./model";
   import {
     createWebSocketForRoomRequest,
     gameStateRequest,
@@ -24,12 +19,13 @@
   let cones = {};
   let selectedCones = [];
   let socket: WebSocket;
-  let moves = [];
+  let moves: Move[] = [];
   let next_player_to_move = 0;
   let my_color: number;
   let players_colors = new Map<number, number>();
   let room_state: RoomDesc;
   let tm;
+  let itvl;
 
   export let params: { id: any };
   export let highlightedPath = [];
@@ -110,7 +106,7 @@
         for (const key in new_cones) {
           if (Object.prototype.hasOwnProperty.call(new_cones, key)) {
             const element = new_cones[key];
-            if (element === user_id) {
+            if (element === player_color) {
               delete new_cones[key];
             }
           }
@@ -118,16 +114,16 @@
         for (let index = 0; index < player_cones.length; index++) {
           new_cones[
             `${player_cones[index][0]},${player_cones[index][1]}`
-          ] = user_id;
+          ] = player_color;
         }
         cones = new_cones;
         // console.log(cones);
         break;
       }
       case "player_left": {
-        let { user_id } = update;
+        let { user_id, next_turn } = update;
         players = players.filter((p) => p.user_id !== user_id);
-        next_player_to_move %= players.length;
+        next_player_to_move = next_turn;
         break;
       }
       case "move_made":
@@ -155,6 +151,9 @@
     if (tm) {
       clearTimeout(tm);
     }
+    if (itvl) {
+      clearInterval(itvl);
+    }
     if (socket) {
       try {
         socket.close();
@@ -170,7 +169,9 @@
 
   const handleWsConnect = (ping) => async (event) => {
     console.log("Connected to server", event);
-    setInterval(ping, 10000);
+    clearTimeout(tm);
+    clearInterval(itvl);
+    itvl = setInterval(ping, 10000);
     await refreshRoomState().catch(console.error);
   };
 
@@ -178,11 +179,12 @@
     socket = createWebSocketForRoomRequest($userToken, params.id);
     function ping() {
       socket.send("ping");
-      if (tm) {
-        clearTimeout(tm);
-      }
+      clearTimeout(tm);
       tm = setTimeout(function () {
         console.error("Websocket connection lost.");
+        if (socket) {
+          socket.close();
+        }
         socket = createWebSocketForRoomRequest($userToken, params.id);
         socket.addEventListener("open", handleWsConnect(ping));
         // Listen for messages
@@ -195,14 +197,25 @@
 
   async function refreshRoomState() {
     const received = await getRoomPlayersRequest(params.id);
-    players = [...players, ...received].filter(
+    players = [...received, ...players].filter(
       (value, index, arr) =>
         arr.findIndex((vv) => value.user_id === vv.user_id) === index
     );
     // console.log(`Players: ${JSON.stringify(players)}`);
     const gameStateRes = await gameStateRequest(params.id);
     const cones_res = gameStateRes || {};
-    cones = { ...cones, ...cones_res.cones };
+    const { cones: cns, players_colors: plrs_clrs, moves: mvs } = cones_res;
+    cones = { ...cones, ...cns };
+    players_colors = new Map(
+      Object.entries(plrs_clrs).map(([a, b]) => [+a, +b])
+    );
+    moves = [];
+    mvs.forEach((m) => {
+      const player = players.find((p) => p.color === m[0]);
+      if (player) {
+        moves.push(<Move>{ by: player, path: m[1] });
+      }
+    });
   }
 
   function getNextPlayer(players: any[], next_move: number) {
@@ -286,8 +299,7 @@
       {highlightedPath}
       {cones}
       {selectedCones}
-      my_move={getNextPlayer(players, next_player_to_move)?.user_id == $userId}
-      {players_colors} />
+      my_move={getNextPlayer(players, next_player_to_move)?.user_id == $userId} />
     <div class="controls">
       {#if +$userId == room_state.created_by}
         <!-- svelte-ignore empty-block -->
