@@ -159,6 +159,15 @@ import EmptyTriangle from "./EmptyTriangle.svelte";
     fill: brown;
     stroke-width: 3px;
   }
+
+  .select-area {
+    opacity: 0;
+    fill: white;
+  }
+  .select-area:hover {
+    opacity: 10%;
+    cursor: pointer;
+  }
 </style>
 
 <svg class="main-svg" viewBox="0 0 {height} {height}">
@@ -167,36 +176,6 @@ import EmptyTriangle from "./EmptyTriangle.svelte";
     cy={getYCoordinate(10, height)}
     r={height / 2 - 10}
     class="big_circle" />
-  <!-- <polygon
-    points="{getXCoordinate(0, pointCounts[0], width)},{getYCoordinate(0, height)} 
-                           {getXCoordinate(5, pointCounts[5], width)},{getYCoordinate(5, height)} 
-                           {getXCoordinate(10, pointCounts[5], width)},{getYCoordinate(5, height)}"
-    class="triangle purple" />
-  <polygon
-    points="{getXCoordinate(5, pointCounts[5], width)},{getYCoordinate(5, height)} 
-                           {getXCoordinate(0, pointCounts[5], width)},{getYCoordinate(5, height)} 
-                           {getXCoordinate(0, pointCounts[10], width)},{getYCoordinate(10, height)}"
-    class="triangle blue" />
-  <polygon
-    points="{getXCoordinate(0, pointCounts[10], width)},{getYCoordinate(10, height)}
-                           {getXCoordinate(0, pointCounts[15], width)},{getYCoordinate(15, height)} 
-                           {getXCoordinate(5, pointCounts[15], width)},{getYCoordinate(15, height)}"
-    class="triangle red" />
-  <polygon
-    points="{getXCoordinate(5, pointCounts[15], width)},{getYCoordinate(15, height)}
-                           {getXCoordinate(10, pointCounts[15], width)},{getYCoordinate(15, height)} 
-                           {getXCoordinate(0, pointCounts[20], width)},{getYCoordinate(20, height)}"
-    class="triangle yellow" />
-  <polygon
-    points="{getXCoordinate(10, pointCounts[15], width)},{getYCoordinate(15, height)} 
-                           {getXCoordinate(15, pointCounts[15], width)},{getYCoordinate(15, height)} 
-                           {getXCoordinate(10, pointCounts[10], width)},{getYCoordinate(10, height)}"
-    class="triangle orange" />
-  <polygon
-    points="{getXCoordinate(10, pointCounts[10], width)},{getYCoordinate(10, height)}
-                           {getXCoordinate(15, pointCounts[5], width)},{getYCoordinate(5, height)} 
-                           {getXCoordinate(10, pointCounts[5], width)},{getYCoordinate(5, height)}"
-    class="triangle green" /> -->
   {#each big_triangles as bt}
     <svelte:component this={bt.component} {...bt.props} />
   {/each}
@@ -213,9 +192,7 @@ import EmptyTriangle from "./EmptyTriangle.svelte";
         cx={getXCoordinate(point, p, width)}
         cy={getYCoordinate(i, height)}
         r={isInCorner(i, point) ? dot_radius : dot_radius - 1}
-        class={(canSelectCone(cones, selectedCones, i, point) ? 'board-point' : '') + (isInCorner(i, point) ? ' big_point' : '') + (isSelected(selectedCones, i, point) ? ' selected' : '')}
-        on:click={(_e) => select(i, point)} />
-      {#if isCone(cones, i, point)}
+        class={(canSelectCone(cones, selectedCones, i, point) ? 'board-point' : '') + (isInCorner(i, point) ? ' big_point' : '') + (isSelected(selectedCones, i, point) ? ' selected' : '')} />
         <circle
           cx={getXCoordinate(point, p, width)}
           cy={getYCoordinate(i, height)}
@@ -223,9 +200,8 @@ import EmptyTriangle from "./EmptyTriangle.svelte";
           fill={getConeColor(cones, players_colors, i, point)}
           stroke-width="1"
           stroke="black"
-          class={'cone' + (isSelected(selectedCones, i, point) ? ' selected' : '') + (my_color == getConeColorNumber(cones, players_colors, i, point) && my_move ? ' my-cone' : '')}
+          class={(isCone(cones, i, point) ? ('cone' + (isSelected(selectedCones, i, point) ? ' selected' : '') + (my_color == getConeColorNumber(cones, players_colors, i, point) && my_move ? ' my-cone' : '')) : 'select-area')}
           on:click={(_e) => select(i, point)} />
-      {/if}
     {/each}
   {/each}
   {#each highlightedPath as pathPoint}

@@ -97,17 +97,35 @@
   });
 
   onMount(async () => {
+    let tm;
+
     const socketConnn = async () => {
       socket = createWebSocketForRoomRequest($userToken, params.id);
+      function ping() {
+        socket.send("ping");
+        tm = setTimeout(function () {
+          console.error("Websocket connection lost.");
+        }, 5000);
+      }
+
+      function pong() {
+        clearTimeout(tm);
+      }
 
       // Connection opened
       socket.addEventListener("open", function (event) {
         console.log("Connected to server", event);
+        setInterval(ping, 10000);
       });
 
       // Listen for messages
       socket.addEventListener("message", function (event) {
-        // console.log("Message from server", event.data);
+        console.log("Message from server", event.data);
+        if (event.data === "pong") {
+          console.log("Pong!");
+          pong();
+          return;
+        }
         const update = JSON.parse(event.data);
         const { name } = update;
         switch (name) {
