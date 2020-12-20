@@ -162,7 +162,6 @@ import EmptyTriangle from "./EmptyTriangle.svelte";
     fill: white;
   }
   .select-area:hover {
-    opacity: 10%;
     cursor: pointer;
   }
 </style>
