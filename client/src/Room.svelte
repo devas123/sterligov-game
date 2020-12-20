@@ -26,6 +26,7 @@
   let room_state: RoomDesc;
   let tm;
   let itvl;
+  let connected = false;
 
   export let params: { id: any };
   export let highlightedPath = [];
@@ -167,32 +168,38 @@
     clearTimeout(tm);
   }
 
-  const handleWsConnect = (ping) => async (event) => {
+  const handleWsConnect = (socket: WebSocket) => async (event) => {
     console.log("Connected to server", event);
     clearTimeout(tm);
     clearInterval(itvl);
-    itvl = setInterval(ping, 10000);
+    itvl = setInterval(ping(socket), 10000);
+    connected = true;
     await refreshRoomState().catch(console.error);
+  };
+
+  const recreateSocket = () => {
+    if (socket) {
+      socket.close();
+    }
+    connected = false;
+    socket = createWebSocketForRoomRequest($userToken, params.id);
+    socket.addEventListener("open", handleWsConnect(socket));
+    // Listen for messages
+    socket.addEventListener("message", handleWsEvent);
+    socket.addEventListener("close", () => connected = false);
+  };
+
+  const ping = (socket: WebSocket) => () => {
+    socket.send("ping");
+    clearTimeout(tm);
+    tm = setTimeout(recreateSocket, 5000);
   };
 
   onMount(async () => {
     socket = createWebSocketForRoomRequest($userToken, params.id);
-    function ping() {
-      socket.send("ping");
-      clearTimeout(tm);
-      tm = setTimeout(function () {
-        console.error("Websocket connection lost.");
-        if (socket) {
-          socket.close();
-        }
-        socket = createWebSocketForRoomRequest($userToken, params.id);
-        socket.addEventListener("open", handleWsConnect(ping));
-        // Listen for messages
-        socket.addEventListener("message", handleWsEvent);
-      }, 5000);
-    }
-    socket.addEventListener("open", handleWsConnect(ping));
+    socket.addEventListener("open", handleWsConnect(socket));
     socket.addEventListener("message", handleWsEvent);
+    socket.addEventListener("close", () => connected = false);
   });
 
   async function refreshRoomState() {
@@ -301,10 +308,13 @@
       {selectedCones}
       my_move={getNextPlayer(players, next_player_to_move)?.user_id == $userId} />
     <div class="controls">
+      {#if !connected}
+        <section>Connecting to server...</section>
+      {/if}
       {#if +$userId == room_state.created_by}
         <!-- svelte-ignore empty-block -->
         {#if !room_state.game_started && !room_state.game_finished}
-          <button on:click={startGame}>Start game</button>
+          <button on:click={startGame} disabled={!connected}>Start game</button>
         {:else if !room_state.game_started}{/if}
       {/if}
       {#if room_state.game_started && !room_state.game_finished}
@@ -323,7 +333,7 @@
             style="background-color: {getColorValue(my_color)};">{getColorString(my_color)}</span>
         </div>
         <div>
-          <button on:click={async () => await makeAMove(selectedCones)}>Make a
+          <button disabled={!connected} on:click={async () => await makeAMove(selectedCones)}>Make a
             move</button>
           <button on:click={() => (selectedCones = [])}>Clear</button>
         </div>
