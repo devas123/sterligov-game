@@ -107,6 +107,9 @@ pub async fn client_connection(ws: WebSocket, room_id: String, user: User, rooms
             name: Some(user.user_name.clone()),
         };
         room.players.push(player);
+        if room.players.len() == 1 {
+            room.created_by = user.user_id.clone();
+        }
         if let Some(gs) = room.game_state.as_mut() {
             gs.players_colors.insert(user.user_id, color.clone().or(Some(default_color.clone())).unwrap());
             if color.is_none() {
@@ -140,10 +143,9 @@ pub async fn client_connection(ws: WebSocket, room_id: String, user: User, rooms
             };
             client_msg(room_id.as_str(), &player_sender, msg, &rooms).await;
         }
-        let mut remove_room = false;
         if let Some(new_room) = rooms.write().unwrap().get_mut(room_id.as_str()) {
             new_room.remove_player(user.user_id);
-            remove_room = new_room.players.len() == 0;
+            let remove_room = new_room.players.len() == 0;
             let new_turn = if remove_room  { 0 } else { new_room.active_player % new_room.players.len() };
             new_room.active_player = new_turn;
             info!("User {} disconnected from room {}", user.user_id, room_id);
@@ -153,12 +155,6 @@ pub async fn client_connection(ws: WebSocket, room_id: String, user: User, rooms
                 new_turn
             );
             send_update(new_room, &upd);
-        }
-
-        if remove_room {
-            info!("Room {} has no members left, so it will be removed", room_id);
-            rooms.write().unwrap().remove(room_id.as_str());
-            info!("Room {} removed", room_id);
         }
     }
 }

@@ -10,6 +10,9 @@ use warp::{Filter, Rejection};
 use model::RoomDesc;
 use serde::de::DeserializeOwned;
 use model::{RoomHandle, User};
+use tokio::time::{Duration, Instant};
+use std::ops::Add;
+use log::info;
 
 mod handler;
 mod ws;
@@ -19,6 +22,7 @@ mod model;
 const HOST: &str = "127.0.0.1";
 const PORT: usize = 8000;
 const USER_TOKEN_HEADER: &str = "X-User-Token";
+const ROOM_TTL_SEC: u64 = 600;
 
 
 type Result<T> = std::result::Result<T, Rejection>;
@@ -44,6 +48,20 @@ async fn main() {
     let time_to_live = ::std::time::Duration::from_secs(3600 * 24);
     let users: UserTokens = Arc::new(RwLock::new(LruCache::<String, User>::with_expiry_duration(time_to_live)));
     let health_route = warp::path!("health").and_then(handler::health_handler);
+    let mut interval = tokio::time::interval_at(Instant::now().add(Duration::from_secs(ROOM_TTL_SEC)), Duration::from_secs(ROOM_TTL_SEC));
+    let rooms_cloned = rooms.clone();
+    tokio::spawn( async move {
+        loop {
+            interval.tick().await;
+            if let Ok(mut rs) = rooms_cloned.try_write() {
+                info!("Removing stale rooms.");
+                rs.retain(|_, room| {
+                    let last_updated: Duration = std::time::Instant::now() - room.last_updated;
+                    room.players.len() != 0 || last_updated < Duration::from_secs(ROOM_TTL_SEC)
+                })
+            }
+        }
+    });
     let validate_path = warp::path("validate")
         .and(warp::post())
         .and(warp::path::param())

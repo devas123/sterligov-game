@@ -186,6 +186,7 @@ async fn create_room(room_id: String, user_id: usize, room_name: String, rooms: 
         game_started: false,
         game_finished: false,
         created_time: Instant::now(),
+        last_updated: Instant::now(),
         game_state: Some(GameState::new()),
     };
     let desc = RoomDesc::from_room(&handle);
@@ -217,6 +218,7 @@ async fn publish_to_room(room_id: String, user_id: usize, rooms: RoomList, reque
                 match r.make_a_move(transformed, user_id) {
                     Ok(msg) => {
                         send_update(r, &msg);
+                        r.last_updated = Instant::now();
                         break;
                     }
                     Err(e) => {

@@ -11,6 +11,7 @@ pub struct RoomHandle {
     pub winner: Option<usize>,
     pub created_by: usize,
     pub created_time: Instant,
+    pub last_updated: Instant,
     pub name: String,
     pub game_started: bool,
     pub game_finished: bool,
