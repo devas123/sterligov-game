@@ -362,7 +362,7 @@
       </div>
       <div class="moves-section">
         <p>Moves:</p>
-        {#each moves as move}
+        {#each [...moves].reverse() as move}
           <div
             style="color: {players_colors.get(move.by.user_id)};"
             class="path-row"
