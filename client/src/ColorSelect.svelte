@@ -41,7 +41,7 @@ import { userId } from "./stores";
 </style>
 
 <!-- svelte-ignore a11y-no-onchange -->
-<select bind:value={selected} on:change={selectColor} on:blur={selectColor}>
+<select bind:value={selected} on:change={selectColor}>
     {#each [selected, ...getFreeColors(colors, players_colors)] as color}
         <option value={color} selected={color === selected}>{getColorString(color)}</option>
     {/each}
