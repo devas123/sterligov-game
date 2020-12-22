@@ -11,15 +11,17 @@ use crate::model::Player;
 pub struct ChatMessage<'a> {
     name: &'a str,
     by: &'a str,
-    message: &'a str
+    message: &'a str,
+    user_id: usize
 }
 
 impl ChatMessage<'_> {
-    fn  new<'a>(by: &'a str, message: &'a str) -> ChatMessage<'a> {
+    fn  new<'a>(by: &'a str, user_id: usize, message: &'a str) -> ChatMessage<'a> {
         return ChatMessage {
             name: "chat_message",
             by,
-            message
+            message,
+            user_id
         }
     }
 }
@@ -150,18 +152,29 @@ pub async fn client_connection(ws: WebSocket, room_id: String, user: User, rooms
             };
             client_msg(room_id.as_str(), &player_sender, msg, &rooms, &user).await;
         }
-        if let Some(new_room) = rooms.write().unwrap().get_mut(room_id.as_str()) {
-            new_room.remove_player(user.user_id);
-            let remove_room = new_room.players.len() == 0;
-            let new_turn = if remove_room  { 0 } else { new_room.active_player % new_room.players.len() };
-            new_room.active_player = new_turn;
-            info!("User {} disconnected from room {}", user.user_id, room_id);
-            let upd = PlayerLeftUpdate::new(
-                user.user_id,
-                new_room.room_id.clone(),
-                new_turn
-            );
-            send_update(new_room, &upd);
+        match rooms.try_write() {
+            Ok(mut lock) => {
+                let mut remove_room = false;
+                if let Some(new_room) = lock.get_mut(room_id.as_str()) {
+                    new_room.remove_player(user.user_id);
+                    remove_room = new_room.players.len() == 0 && new_room.game_finished;
+                    let new_turn = if new_room.players.len() == 0 { 0 } else { new_room.active_player % new_room.players.len() };
+                    new_room.active_player = new_turn;
+                    info!("User {} disconnected from room {}", user.user_id, room_id);
+                    let upd = PlayerLeftUpdate::new(
+                        user.user_id,
+                        new_room.room_id.clone(),
+                        new_turn
+                    );
+                    send_update(new_room, &upd);
+                }
+                if remove_room {
+                    lock.remove(&room_id);
+                }
+            }
+            Err(e) => {
+                error!("Error while acquiring the lock. {:?}", e)
+            }
         }
     }
 }
@@ -190,11 +203,11 @@ async fn client_msg(room_id: &str, sender: &mpsc::UnboundedSender<std::result::R
         return;
     }
 
-    let chat_message = ChatMessage::new(user.user_name.as_str(), message);
+    let chat_message = ChatMessage::new(user.user_name.as_str(), user.user_id, message);
 
     let mut locked = rooms.write().unwrap();
     if let Some(room) = locked.get_mut(room_id) {
-        info!("Message {} by user {}", chat_message.message, room_id);
+        debug!("Message {} by user {}", chat_message.message, room_id);
         send_update(room, &chat_message);
         // v.players = topics_req.;
     }

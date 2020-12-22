@@ -5,11 +5,11 @@
     getColorString,
     small_triangles_coordinates,
     small_triangles_center,
-NEUTRAL,
+    NEUTRAL,
   } from "./const";
   import { createEventDispatcher } from "svelte";
   import Triangle from "./Triangle.svelte";
-import EmptyTriangle from "./EmptyTriangle.svelte";
+  import EmptyTriangle from "./EmptyTriangle.svelte";
   const dispatch = createEventDispatcher();
 
   function select(row: number, col: number) {
@@ -86,7 +86,13 @@ import EmptyTriangle from "./EmptyTriangle.svelte";
     return (cones && cones[`${row},${col}`]) || NEUTRAL;
   }
 
-  const triangle = (component: any, a: number[], b: number[], c: number[], color: string) => {
+  const triangle = (
+    component: any,
+    a: number[],
+    b: number[],
+    c: number[],
+    color: string
+  ) => {
     return {
       component,
       props: {
@@ -121,6 +127,15 @@ import EmptyTriangle from "./EmptyTriangle.svelte";
   const center_triangles = small_triangles_center.map((arr) =>
     triangle(EmptyTriangle, arr[0], arr[1], arr[2], "simple")
   );
+  const getDotRadius = (row, col, selectedCones) => {
+    const radius = isInCorner(row, col) ? dot_radius : dot_radius - 1;
+    return isSelected(selectedCones, row, col) ? radius * 1.6 : radius;
+  };
+
+  const getConeRadius = (row, col, selectedCones) => {
+    const radius = isInCorner(row, col) ? cone_radius : cone_radius - 1;
+    return isSelected(selectedCones, row, col) ? radius * 1.4 : radius;
+  };
 </script>
 
 <style>
@@ -149,13 +164,16 @@ import EmptyTriangle from "./EmptyTriangle.svelte";
     stroke: aliceblue;
   }
   .my-cone:hover {
-    opacity: 50%;
     cursor: pointer;
   }
   .selected {
-    opacity: 50%;
-    fill: brown;
-    stroke-width: 3px;
+    stroke-width: 2px;
+  }
+
+  .board-point.selected {
+    stroke-width: 2px;
+    stroke: black;
+    fill: white;
   }
 
   .select-area {
@@ -188,17 +206,17 @@ import EmptyTriangle from "./EmptyTriangle.svelte";
       <circle
         cx={getXCoordinate(point, p, width)}
         cy={getYCoordinate(i, height)}
-        r={isInCorner(i, point) ? dot_radius : dot_radius - 1}
+        r={getDotRadius(i, point, selectedCones)}
         class={(canSelectCone(cones, selectedCones, i, point) ? 'board-point' : '') + (isInCorner(i, point) ? ' big_point' : '') + (isSelected(selectedCones, i, point) ? ' selected' : '')} />
-        <circle
-          cx={getXCoordinate(point, p, width)}
-          cy={getYCoordinate(i, height)}
-          r={cone_radius}
-          fill={getConeColor(cones, i, point)}
-          stroke-width="1"
-          stroke="black"
-          class={(isCone(cones, i, point) ? ('cone' + (isSelected(selectedCones, i, point) ? ' selected' : '') + (my_color == getConeColorNumber(cones, i, point) && my_move ? ' my-cone' : '')) : 'select-area')}
-          on:click={(_e) => select(i, point)} />
+      <circle
+        cx={getXCoordinate(point, p, width)}
+        cy={getYCoordinate(i, height)}
+        r={isCone(cones, i, point) ? getConeRadius(i, point, selectedCones) : cone_radius * 1.5}
+        fill={getConeColor(cones, i, point)}
+        stroke-width="1"
+        stroke="black"
+        class={isCone(cones, i, point) ? 'cone' + (isSelected(selectedCones, i, point) ? ' selected' : '') + (my_color == getConeColorNumber(cones, i, point) && my_move ? ' my-cone' : '') : 'select-area'}
+        on:click={(_e) => select(i, point)} />
     {/each}
   {/each}
   {#each highlightedPath as pathPoint}

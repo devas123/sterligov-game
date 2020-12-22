@@ -36,10 +36,15 @@
   let itvl;
   let connected = false;
   let chatMessages = [];
+  let chatFocused = false;
 
   export let params: { id: any };
   export let highlightedPath = [];
 
+
+  const onFocus = () => chatFocused=true;
+  const onBlur = () => chatFocused=false;
+  
   async function validatePath(path: number[][]) {
     return validatePathRequest(path, $userToken, params.id);
   }
@@ -260,7 +265,7 @@
   async function handleKeydown(
     event: KeyboardEvent & { currentTarget: EventTarget & Window }
   ) {
-    if (event.code === "Space" && selectedCones && selectedCones.length > 1) {
+    if (!chatFocused && event.code === "Space" && selectedCones && selectedCones.length > 1) {
       await makeAMove(selectedCones);
     }
   }
@@ -333,7 +338,7 @@
       {/if}
       {#if room_state.game_started && !room_state.game_finished}
         {#if getNextPlayer(players, next_player_to_move)?.user_id == $userId}
-          <p>Your move.</p>
+          <h4>Your move!</h4>
         {:else}
           <p>
             Waiting for
@@ -384,6 +389,8 @@
         </TabList>
         <TabPanel>
           <Chat
+          on:blur={onBlur}
+          on:focus={onFocus}
             messages={chatMessages}
             on:messagesent={(e) => sendChatMessage(e)} />
         </TabPanel>
