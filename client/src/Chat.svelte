@@ -27,13 +27,18 @@
 
     onMount(() => {
         div.scrollTo(0, div.scrollHeight);
-    })
+    });
 
     function sendMessage(message: string) {
         dispatch("messagesent", {
             message,
         });
     }
+
+    const sendAndReset = () => {
+        sendMessage(inputmessage);
+        inputmessage = "";
+    };
 </script>
 
 <style>
@@ -55,6 +60,11 @@
         padding: 0 5px;
         max-width: 80%;
         align-self: flex-start;
+    }
+    .input-line {
+        display: block;
+        position: relative;
+        width: 100%;
     }
     .chat-line.own {
         background-color: rgb(163, 124, 65);
@@ -79,6 +89,16 @@
         word-break: break-all;
         word-wrap: break-word;
     }
+    input[type="text"] {
+        padding-right: 2em;
+        width: 100%;
+    }
+    .embedded {
+        position: absolute;
+        right: 10px;
+        top: 10px;
+        cursor: pointer;
+    }
 </style>
 
 <svelte:window on:keydown={handleKeydown} />
@@ -92,7 +112,17 @@
     {/each}
     <div class="fill" />
 </div>
-<input
-    type="text"
-    bind:value={inputmessage}
-    placeholder="Write message and press enter" on:focus on:blur />
+<div class="input-line">
+    <input
+        type="text"
+        bind:value={inputmessage}
+        placeholder="Write message and press enter"
+        on:focus
+        on:blur />
+
+    <!-- svelte-ignore a11y-missing-attribute -->
+    <a on:click={sendAndReset}><i
+        class="embedded fa fa-paper-plane"
+        aria-hidden="true"
+         /></a>
+</div>

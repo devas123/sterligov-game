@@ -2,7 +2,7 @@
     export let a: number[];
     export let b: number[];
     export let c: number[];
-    export const cls: any;
+    export const cls = {};
 </script>
 
 <style>
