@@ -73,23 +73,22 @@ impl GameState {
         Ok(&POINTS[*row][*col])
     }
 
-    pub fn add_cones(&self, color: usize) -> std::result::Result<GameState, usize> {
+    pub fn add_cones(&mut self, color: usize) -> std::result::Result<(), usize> {
         if self.cones.iter().any(|((_, _), c)| { *c == color }) {
-            return Ok(self.clone());
+            return Ok(());
         }
         self.add_cones_for_color(color)
     }
 
-    fn add_cones_for_color(&self, color_number: usize) -> std::result::Result<GameState, usize> {
-        let mut gs = self.clone();
+    fn add_cones_for_color(&mut self, color_number: usize) -> std::result::Result<(), usize> {
         for (row, cols) in POINTS.iter().enumerate() {
             for (col, color) in cols.iter().enumerate() {
                 if *color == color_number {
-                    gs.add_cone(row as i32, col as i32, *color)?;
+                    self.add_cone(row as i32, col as i32, *color)?;
                 }
             }
         }
-        Ok(gs)
+        Ok(())
     }
 
     pub fn get_cones(&self, user_id: &usize) -> Vec<(usize, usize)> {

@@ -98,7 +98,22 @@ export const startGameRequest = async (userToken: string, room_id: string) => {
   await fetch(`${base_url}/update/${room_id}`, {
     method: `POST`,
     body: JSON.stringify({
-      start: true,
+      update_type: 'Start'
+    }),
+    headers,
+  });
+};
+
+
+export const colorChangeRequest = async (userToken: string, room_id: string, color: number) => {
+  const headers = new Headers();
+  headers.append(X_USER_TOKEN, userToken);
+  headers.append(CONTENT_TYPE, `application/json; charset=UTF-8`);
+  await fetch(`${base_url}/update/${room_id}`, {
+    method: `POST`,
+    body: JSON.stringify({
+      update_type: 'ColorChange',
+      new_color: color
     }),
     headers,
   });

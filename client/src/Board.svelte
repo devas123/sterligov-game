@@ -5,6 +5,7 @@
     getColorString,
     small_triangles_coordinates,
     small_triangles_center,
+NEUTRAL,
   } from "./const";
   import { createEventDispatcher } from "svelte";
   import Triangle from "./Triangle.svelte";
@@ -62,7 +63,7 @@ import EmptyTriangle from "./EmptyTriangle.svelte";
     return -1;
   };
   function isCone(cones: { [x: string]: number }, row: number, col: number) {
-    return cones.hasOwnProperty(`${row},${col}`);
+    return cones && cones.hasOwnProperty(`${row},${col}`);
   }
 
   function isSelected(path: number[][], row: number, col: number) {
@@ -82,7 +83,7 @@ import EmptyTriangle from "./EmptyTriangle.svelte";
     row: number,
     col: number
   ) {
-    return cones[`${row},${col}`];
+    return (cones && cones[`${row},${col}`]) || NEUTRAL;
   }
 
   const triangle = (component: any, a: number[], b: number[], c: number[], color: string) => {

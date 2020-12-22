@@ -2,10 +2,11 @@
   import { onMount, onDestroy } from "svelte";
   import Board from "./Board.svelte";
   import { getColorString, getColorValue } from "./const";
-  import { userId, userToken } from "./stores";
+  import { userId, userName, userToken } from "./stores";
   import { pop } from "svelte-spa-router";
   import type { Move, Player, RoomDesc } from "./model";
   import {
+    colorChangeRequest,
     createWebSocketForRoomRequest,
     gameStateRequest,
     getRoomPlayersRequest,
@@ -14,6 +15,13 @@
     startGameRequest,
     validatePathRequest,
   } from "./functions";
+  import Moves from "./Moves.svelte";
+  import Chat from "./Chat.svelte";
+  import Tabs from "./tabs/Tabs.svelte";
+  import TabList from "./tabs/TabList.svelte";
+  import Tab from "./tabs/Tab.svelte";
+  import TabPanel from "./tabs/TabPanel.svelte";
+  import ColorSelect from "./ColorSelect.svelte";
 
   let players: Player[] = [];
   let cones = {};
@@ -27,6 +35,7 @@
   let tm;
   let itvl;
   let connected = false;
+  let chatMessages = [];
 
   export let params: { id: any };
   export let highlightedPath = [];
@@ -94,6 +103,10 @@
     const update = JSON.parse(event.data);
     const { name } = update;
     switch (name) {
+      case "chat_message": {
+        chatMessages = [...chatMessages, update];
+        break;
+      }
       case "player_joined": {
         let { user_id, player_cones, player_name, player_color } = update;
         if (!players.find((p) => p.user_id === user_id)) {
@@ -144,7 +157,13 @@
         break;
       case "room_state_update":
         const { room: r } = update as { room: RoomDesc };
-        room_state = { ...r };
+        room_state = r;
+        break;
+      case "game_state":
+        const { cones: c, players_colors: pc } = update.game;
+        cones = c;
+        players_colors = new Map(Object.entries(pc).map(([a, b]) => [+a, +b]));
+        break;
     }
   }
 
@@ -186,7 +205,7 @@
     socket.addEventListener("open", handleWsConnect(socket));
     // Listen for messages
     socket.addEventListener("message", handleWsEvent);
-    socket.addEventListener("close", () => connected = false);
+    socket.addEventListener("close", () => (connected = false));
   };
 
   const ping = (socket: WebSocket) => () => {
@@ -199,7 +218,7 @@
     socket = createWebSocketForRoomRequest($userToken, params.id);
     socket.addEventListener("open", handleWsConnect(socket));
     socket.addEventListener("message", handleWsEvent);
-    socket.addEventListener("close", () => connected = false);
+    socket.addEventListener("close", () => (connected = false));
   });
 
   async function refreshRoomState() {
@@ -229,19 +248,29 @@
     return players[next_move];
   }
 
+  const sendChatMessage = (e) => {
+    if (socket) {
+      const { message } = e.detail;
+      if (message) {
+        socket.send(message);
+      }
+    }
+  };
+
   async function handleKeydown(
     event: KeyboardEvent & { currentTarget: EventTarget & Window }
   ) {
-    if (event.keyCode === 13 && selectedCones && selectedCones.length > 1) {
+    if (event.code === "Space" && selectedCones && selectedCones.length > 1) {
       await makeAMove(selectedCones);
     }
   }
 
+  const selectColor = async ({ color }: { color: number }) => {
+    await colorChangeRequest($userToken, params.id, color);
+  };
+
   $: {
     if (players) {
-      for (const player of players) {
-        players_colors.set(player.user_id, player.color);
-      }
       my_color = players_colors.get(+$userId);
     }
     // console.log(room)
@@ -252,31 +281,16 @@
   .controls {
     display: flex;
     flex-direction: column;
-    height: 100%;
+    width: 100%;
+    min-height: 0;
+    min-width: 0;
+    padding-bottom: 1em;
     padding-top: 1em;
   }
 
   .bold {
     font-weight: bold;
   }
-  .moves-section {
-    display: flex;
-    flex-direction: column;
-    overflow: auto;
-    height: 10px;
-    flex-grow: 1;
-    margin-bottom: 1rem;
-  }
-  .path-row {
-    cursor: pointer;
-    font-family: "Courier New", Courier, monospace;
-    border-radius: 2px;
-    margin-bottom: 2px;
-  }
-  .path-row:hover {
-    background-color: rgb(66, 66, 14);
-  }
-
   .main-grid {
     position: relative;
     display: grid;
@@ -333,8 +347,9 @@
             style="background-color: {getColorValue(my_color)};">{getColorString(my_color)}</span>
         </div>
         <div>
-          <button disabled={!connected} on:click={async () => await makeAMove(selectedCones)}>Make a
-            move</button>
+          <button
+            disabled={!connected}
+            on:click={async () => await makeAMove(selectedCones)}>Make a move</button>
           <button on:click={() => (selectedCones = [])}>Clear</button>
         </div>
       {:else if room_state.game_finished}
@@ -345,6 +360,8 @@
         {/if}
       {:else}
         <p>Waiting for the game to start.</p>
+        <p>You can select color</p>
+        <ColorSelect on:colorselected={(e) => selectColor(e.detail)} {players_colors} />
       {/if}
       <div class="constant"><button on:click={() => pop()}>Leave</button></div>
       <div class="users">
@@ -360,18 +377,23 @@
           </ul>
         </section>
       </div>
-      <div class="moves-section">
-        <p>Moves:</p>
-        {#each [...moves].reverse() as move}
-          <div
-            style="color: {players_colors.get(move.by.user_id)};"
-            class="path-row"
-            on:mouseenter={() => (highlightedPath = move.path)}
-            on:mouseleave={() => (highlightedPath = [])}>
-            {move.by?.name + ': ' + JSON.stringify(move.path[0]) + '->' + JSON.stringify(move.path[move.path.length - 1])}
-          </div>
-        {/each}
-      </div>
+      <Tabs>
+        <TabList>
+          <Tab>Chat</Tab>
+          <Tab>Moves</Tab>
+        </TabList>
+        <TabPanel>
+          <Chat
+            messages={chatMessages}
+            on:messagesent={(e) => sendChatMessage(e)} />
+        </TabPanel>
+        <TabPanel>
+          <Moves
+            {moves}
+            {players_colors}
+            on:moveselected={(e) => (highlightedPath = e.detail)} />
+        </TabPanel>
+      </Tabs>
     </div>
   </div>
 {:catch err}

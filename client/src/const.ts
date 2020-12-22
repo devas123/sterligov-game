@@ -1,4 +1,4 @@
-export const NEUTRAL = 0;
+  export const NEUTRAL = 0;
 	export const PURPLE = 1;
 	export const GREEN = 2;
 	export const ORANGE = 3;

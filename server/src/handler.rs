@@ -1,5 +1,7 @@
 use std::convert::Infallible;
 use std::error::Error;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
 use log::{error, info};
@@ -9,12 +11,11 @@ use warp::filters::cors::CorsForbidden;
 use warp::hyper::StatusCode;
 use warp::reply::json;
 
-use crate::{HOST, PORT, Result, RoomHandle, RoomList, UserTokens, ws, User};
+use crate::{HOST, PORT, Result, RoomHandle, RoomList, User, UserTokens, ws};
 use crate::game::GameState;
+use crate::model::{AddUserRequest, CreateRoomRequest, CreateRoomResponse, ErrorMessage, PlayerDesc, PublishToARoomRequest, RoomDesc, RoomIdParameter, RoomStateUpdate, TokenCreatedResponse, UpdateRoomStateRequest, UserNotFound, GameColorsUpdate};
+use crate::model::UpdateRoomType::{ColorChange, Start, Stop};
 use crate::ws::send_update;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
-use crate::model::{TokenCreatedResponse, AddUserRequest, RoomStateUpdate, RoomDesc, UpdateRoomStateRequest, UserNotFound, PublishToARoomRequest, ErrorMessage, CreateRoomRequest, CreateRoomResponse, RoomIdParameter, PlayerDesc};
 
 pub async fn get_rooms_handler(rooms: RoomList) -> Result<impl Reply> {
     let r: Vec<RoomDesc> = rooms.read().unwrap().iter().map(|(_, v)| { RoomDesc::from_room(v) }).collect();
@@ -112,9 +113,11 @@ pub async fn create_room_handler(user_token: String, user_id_opt: Option<usize>,
 pub async fn get_players(query: RoomIdParameter, rooms: RoomList) -> Result<impl Reply> {
     let room_id = query.room_id;
     rooms.read().unwrap().get(&room_id)
-        .map(|room| { room.players.iter().map(|player| {
-            PlayerDesc::from_player(player, room.game_state.as_ref().map(|gs| {gs.players_colors.get(&player.user_id).cloned()}).flatten().unwrap())
-        }).collect() })
+        .map(|room| {
+            room.players.iter().map(|player| {
+                PlayerDesc::from_player(player, room.game_state.as_ref().map(|gs| { gs.players_colors.get(&player.user_id).cloned() }).flatten().unwrap())
+            }).collect()
+        })
         .map(|players: Vec<PlayerDesc>| { json(&players) })
         .ok_or(warp::reject::reject())
 }
@@ -158,7 +161,7 @@ pub async fn refresh_token_handle(user: Option<User>, tokens: UserTokens) -> Res
             let user_name = usr.user_name.clone();
             let user_id = usr.user_id.clone();
             tokens.write().unwrap().insert(token.clone(), usr);
-            Ok(warp::reply::json(&TokenCreatedResponse { token, created_at: Instant::now(), user_id, user_name}))
+            Ok(warp::reply::json(&TokenCreatedResponse { token, created_at: Instant::now(), user_id, user_name }))
         }
     }
 }
@@ -240,11 +243,47 @@ async fn update_room_state(room_id: String, user_id: usize, rooms: RoomList, req
     info!("Update room state: {}, user_id: {}, message: {:?}", room_id, user_id, request);
     if let Some(r) = rooms.clone().write().unwrap().get_mut(&room_id) {
         info!("Found the room: {}, created_by {} at {:?}", r.name, r.created_by, r.created_time);
-        if r.created_by == user_id {
-            r.game_started = request.start;
-            send_update(r, &RoomStateUpdate::new(r));
-        } else {
-            error!("User {} did not create the room, he can't update the state.", user_id)
+        match request.update_type {
+            Start | Stop => {
+                if r.created_by == user_id {
+                    r.game_started = request.update_type == Start;
+                    send_update(r, &RoomStateUpdate::new(r));
+                } else {
+                    error!("User {} did not create the room, he can't update the state.", user_id)
+                }
+            }
+            ColorChange => {
+                if !r.game_started {
+                    request.new_color.map(move |new_color| {
+                        if new_color > 0 && new_color < 7 {
+                            if let Some(gs) = r.game_state.as_mut() {
+                                if !gs.players_colors.iter().any(|(id, color)| { *color == new_color && *id != user_id }) {
+                                    let mut old = 0;
+                                    if let Some(old_color) = gs.players_colors.insert(user_id, new_color) {
+                                        gs.cones.retain(|(_, _), color| { *color != old_color });
+                                        old = old_color;
+                                    }
+                                    if let Ok(_) = gs.add_cones(new_color) {
+                                        let new_gs = GameState {
+                                            cones: gs.cones.clone(),
+                                            players_colors: gs.players_colors.clone(),
+                                            moves: gs.moves.clone()
+                                        };
+                                        let update = GameColorsUpdate::new(r.room_id.as_str(), new_gs);
+                                        send_update(r, &update);
+                                    } else if old > 0 {
+                                        error!("Error when adding cones to the board.");
+                                        if let Err(_) = gs.add_cones(old) {
+                                            error!("Error when adding old cones too :(");
+                                        }
+                                        gs.players_colors.insert(user_id, old);
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+            }
         }
     }
     info!("Finished.");

@@ -123,14 +123,17 @@ processToken,
 
   .add-user-form {
     margin-top: 1em;
+    display: flex;
+    flex-direction: row;
   }
 </style>
 
 <div class="controls">
+  <h2>Welcome to chinese-checkers game!</h2>
   {#if !$userToken}
     <div class="add-user-form">
       <label for="name">
-        Input name
+        Please input your name
         <input
           id="name"
           bind:value={$userName}
@@ -175,4 +178,6 @@ processToken,
       {/each}
     </div>
   {/if}
+  <div style="font-weight: bold; margin-bottom: 1em;">Release notes:</div>
+  <div>22.12.20: added chat and color select</div>
 </div>

@@ -56,6 +56,23 @@ pub struct RoomStateUpdate {
     pub room: RoomDesc
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct GameColorsUpdate<'a> {
+    name: &'a str,
+    pub room_id: &'a str,
+    pub game: GameState
+}
+
+impl GameColorsUpdate<'_> {
+    pub fn new(room_id: &str, gs: GameState) -> GameColorsUpdate {
+        GameColorsUpdate {
+            name: "game_state",
+            room_id,
+            game: gs
+        }
+    }
+}
+
 impl RoomStateUpdate {
     pub fn new(room: &RoomHandle) -> RoomStateUpdate {
         RoomStateUpdate {
@@ -142,9 +159,17 @@ pub struct PublishToARoomRequest {
     pub calculate_path: bool
 }
 
+#[derive(Eq, PartialEq, Deserialize, Debug, Clone)]
+pub enum UpdateRoomType {
+    Start,
+    Stop,
+    ColorChange
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct UpdateRoomStateRequest {
-    pub start: bool
+    pub update_type: UpdateRoomType,
+    pub new_color: Option<usize>
 }
 
 #[derive(Serialize, Debug)]

@@ -1,16 +1,27 @@
 use futures::{FutureExt, StreamExt};
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
-use serde_json::from_str;
 use tokio::sync::mpsc;
 use warp::filters::ws::{Message, WebSocket};
 
 use crate::{RoomHandle, RoomList, User};
 use crate::model::Player;
 
-#[derive(Deserialize, Debug)]
-pub struct TopicsRequest {
-    mv: String
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ChatMessage<'a> {
+    name: &'a str,
+    by: &'a str,
+    message: &'a str
+}
+
+impl ChatMessage<'_> {
+    fn  new<'a>(by: &'a str, message: &'a str) -> ChatMessage<'a> {
+        return ChatMessage {
+            name: "chat_message",
+            by,
+            message
+        }
+    }
 }
 
 #[derive(Serialize, Debug)]
@@ -75,7 +86,7 @@ pub async fn client_connection(ws: WebSocket, room_id: String, user: User, rooms
         error!("Room full");
     } else if room.players.iter().any(|x| { x.user_id == user.user_id }) {
         info!("User already in the room.");
-    } else if room.game_started && !(room.game_state.is_some() && room.game_state.as_ref().unwrap().players_colors.get(&user.user_id).is_some()) {
+    } else if room.game_started && room.game_state.as_ref().filter(|gs| { gs.players_colors.get(&user.user_id).is_some() }).is_none() {
         error!("Game is already started.");
     } else {
         let color = room.game_state.as_ref().map(|gs| { gs.players_colors.get(&user.user_id).cloned() }).flatten();
@@ -113,15 +124,11 @@ pub async fn client_connection(ws: WebSocket, room_id: String, user: User, rooms
         if let Some(gs) = room.game_state.as_mut() {
             gs.players_colors.insert(user.user_id, color.clone().or(Some(default_color.clone())).unwrap());
             if color.is_none() {
-                if let Err(_) = gs.add_cones(default_color).map(|new_gs| {
-                    update.player_cones = new_gs.get_cones(&user.user_id);
-                    room.game_state = Some(new_gs);
-                }) {
+                if let Err(_) = gs.add_cones(default_color) {
                     error!("Error while adding cones for player {}", user.user_id)
                 }
-            } else {
-                update.player_cones = gs.get_cones(&user.user_id);
             }
+            update.player_cones = gs.get_cones(&user.user_id);
         }
         info!("User with id {} connected to room {}", user.user_id, room_id);
 
@@ -141,7 +148,7 @@ pub async fn client_connection(ws: WebSocket, room_id: String, user: User, rooms
                     break;
                 }
             };
-            client_msg(room_id.as_str(), &player_sender, msg, &rooms).await;
+            client_msg(room_id.as_str(), &player_sender, msg, &rooms, &user).await;
         }
         if let Some(new_room) = rooms.write().unwrap().get_mut(room_id.as_str()) {
             new_room.remove_player(user.user_id);
@@ -169,8 +176,8 @@ pub fn send_update(rh: &RoomHandle, upd: &impl Serialize) {
     }
 }
 
-async fn client_msg(id: &str, sender: &mpsc::UnboundedSender<std::result::Result<Message, warp::Error>>, msg: Message, rooms: &RoomList) {
-    debug!("Received message from {}: {:?}", id, msg);
+async fn client_msg(room_id: &str, sender: &mpsc::UnboundedSender<std::result::Result<Message, warp::Error>>, msg: Message, rooms: &RoomList, user: &User) {
+    debug!("Received message from {}: {:?}", room_id, msg);
     let message = match msg.to_str() {
         Ok(v) => v,
         Err(_) => return
@@ -183,17 +190,12 @@ async fn client_msg(id: &str, sender: &mpsc::UnboundedSender<std::result::Result
         return;
     }
 
-    let topics_req: TopicsRequest = match from_str(&message) {
-        Ok(v) => v,
-        Err(e) => {
-            error!("Error while parsing message to topics request: {}", e);
-            return;
-        }
-    };
+    let chat_message = ChatMessage::new(user.user_name.as_str(), message);
 
     let mut locked = rooms.write().unwrap();
-    if let Some(_v) = locked.get_mut(id) {
-        info!("Move {} by user {}", topics_req.mv, id)
+    if let Some(room) = locked.get_mut(room_id) {
+        info!("Message {} by user {}", chat_message.message, room_id);
+        send_update(room, &chat_message);
         // v.players = topics_req.;
     }
 }
