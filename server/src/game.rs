@@ -322,7 +322,8 @@ mod tests {
 
     #[test]
     fn test_validate_path_regression() {
-        let mut game_state = GameState::new().add_cones_for_color(PURPLE).unwrap();
+        let mut game_state = GameState::new();
+        game_state.add_cones_for_color(PURPLE).unwrap();
         game_state.remove_cone(3, 3).unwrap();
         game_state.add_cone(6, 10, PURPLE).unwrap();
 
