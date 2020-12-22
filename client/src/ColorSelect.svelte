@@ -16,12 +16,13 @@ import { userId } from "./stores";
     export let players_colors: Map<number, number>
     let selected: number;
     const dispatch = createEventDispatcher();
-    function selectColor(color: number) {
-        if (color) {
+    function selectColor() {
+        if (selected) {
             const e = {
-                color,
+                color: selected,
             };
             dispatch("colorselected", e);
+            selected = undefined;
         }
     }
 
@@ -40,7 +41,7 @@ import { userId } from "./stores";
 </style>
 
 <!-- svelte-ignore a11y-no-onchange -->
-<select bind:value={selected} on:change={() => selectColor(selected)}>
+<select bind:value={selected} on:change={selectColor} on:blur={selectColor}>
     {#each [selected, ...getFreeColors(colors, players_colors)] as color}
         <option value={color} selected={color === selected}>{getColorString(color)}</option>
     {/each}
