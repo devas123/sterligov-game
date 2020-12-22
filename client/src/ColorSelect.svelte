@@ -33,8 +33,6 @@ import { userId } from "./stores";
         const colorsArray = Array.from(plrs_clrs.values());
         return clrs?.filter(c => !colorsArray.find(k => k === c));
     }
-
-    $: selected = players_colors.get(+$userId);
 </script>
 
 <style>
@@ -42,7 +40,7 @@ import { userId } from "./stores";
 
 <!-- svelte-ignore a11y-no-onchange -->
 <select bind:value={selected} on:change={selectColor}>
-    {#each [selected, ...getFreeColors(colors, players_colors)] as color}
+    {#each getFreeColors(colors, players_colors) as color}
         <option value={color} selected={color === selected}>{getColorString(color)}</option>
     {/each}
 </select>
