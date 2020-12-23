@@ -13,6 +13,7 @@ use model::{RoomHandle, User};
 use tokio::time::{Duration, Instant};
 use std::ops::Add;
 use log::info;
+use crate::model::{Player, Message};
 
 mod handler;
 mod ws;
@@ -43,7 +44,7 @@ where T: DeserializeOwned + Send {
 async fn main() {
     env::set_var("RUST_LOG", "info");
     env_logger::init();
-    let rooms: RoomList = Arc::new(RwLock::new(HashMap::new()));
+    let rooms = Arc::new(RwLock::new(HashMap::new()));
     let users_count = Arc::new(AtomicUsize::new(0));
     let time_to_live = ::std::time::Duration::from_secs(3600 * 24);
     let users: UserTokens = Arc::new(RwLock::new(LruCache::<String, User>::with_expiry_duration(time_to_live)));
@@ -55,10 +56,16 @@ async fn main() {
             interval.tick().await;
             if let Ok(mut rs) = rooms_cloned.try_write() {
                 info!("Removing stale rooms.");
-                rs.retain(|_, room| {
+                rs.retain(|_, room: &mut RoomHandle| {
                     let last_updated: Duration = std::time::Instant::now() - room.last_updated;
                     room.players.len() != 0 || last_updated < Duration::from_secs(ROOM_TTL_SEC)
-                })
+                });
+
+                for (_, handler) in rs.iter_mut() {
+                    handler.players.retain(|p: &Player| {
+                        p.sender.send(Ok(Message::event("test".to_string()))).is_ok()
+                    });
+                }
             }
         }
     });
@@ -93,11 +100,11 @@ async fn main() {
         .and_then(handler::refresh_token_handle);
 
     let room = warp::path("room");
-    let room_messages = "message";
+    let room_moves = "move";
+    let room_messages = "chat";
     let room_updates = "update";
     let room_handle_routes = room
         .and(warp::post())
-        .and(warp::header::<String>(USER_TOKEN_HEADER))
         .and(with_userid(users.clone()))
         .and(warp::body::json())
         .and(with_rooms(rooms.clone()))
@@ -114,16 +121,25 @@ async fn main() {
             .and(with_rooms(rooms.clone()))
             .and_then(handler::get_rooms_handler));
 
-    let room_messages_routes = create_default_path(room_messages, rooms.clone(), users.clone()).and_then(handler::publish_to_room_handler);
+    let room_messages_routes = create_default_path(room_moves, rooms.clone(), users.clone()).and_then(handler::make_a_move_handler);
 
     let room_updates_routes = create_default_path(room_updates, rooms.clone(), users.clone()).and_then(handler::update_room_state_handler);
+    let room_chat_routes = warp::path(room_messages)
+        .and(warp::post())
+        .and(warp::path::param())
+        .and(warp::body::json())
+        .and(with_rooms(rooms.clone()))
+        .and(with_user(users.clone()))
+        .and_then(handler::room_chat_message_handler);
 
-    let ws_route = warp::path("ws")
-        .and(warp::ws())
+    let sse_route = warp::path("sse")
+        .and(warp::get())
         .and(warp::path::param())
         .and(with_user_from_token(users.clone()))
         .and(with_rooms(rooms.clone()))
-        .and_then(handler::ws_handler);
+        .map(|room_id: String, user: Option<User>, rooms: RoomList| {
+            warp::sse::reply(warp::sse::keep_alive().stream(handler::sse_handler(room_id, user, rooms).unwrap()))
+        });
 
     // let publish = warp::path!("publish")
     //     .and(warp::body::json())
@@ -141,7 +157,6 @@ async fn main() {
         ]);
     let routes = health_route
         .or(room_handle_routes)
-        .or(ws_route)
         .or(room_messages_routes)
         .or(add_user)
         .or(get_players)
@@ -149,6 +164,8 @@ async fn main() {
         .or(refresh_token)
         .or(validate_path)
         .or(room_updates_routes)
+        .or(room_chat_routes)
+        .or(sse_route)
         // .or(publish)
         .with(cors)
         .recover(handler::handle_rejection)

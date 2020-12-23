@@ -1,11 +1,11 @@
 use std::time::Instant;
 use crate::game::GameState;
 use tokio::sync::mpsc;
-use warp::filters::ws::Message;
 use serde::{Serialize, Deserialize};
 use log::{error};
+use crate::model::Message::{Event};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct RoomHandle {
     pub room_id: String,
     pub winner: Option<usize>,
@@ -83,16 +83,7 @@ impl RoomStateUpdate {
 }
 
 
-impl RoomHandle {
-    pub fn remove_player(&mut self, user_id: usize) {
-        for (ind, p) in self.players.iter().enumerate() {
-            if p.user_id == user_id {
-                self.players.remove(ind);
-                break;
-            }
-        }
-    }
-
+impl  RoomHandle {
     pub fn make_a_move(&mut self, path: Vec<(i32, i32)>, user_id: usize) -> std::result::Result<RoomUpdate, usize> {
         if let Some(gs) = self.game_state.as_mut() {
             let next = (self.active_player + 1) % self.players.len();
@@ -120,11 +111,23 @@ impl RoomHandle {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
+pub enum  Message {
+    Text(String),
+    Event(String)
+}
+
+impl Message {
+    pub fn event(evt: String) -> Message {
+        Event(evt)
+    }
+}
+
+#[derive(Debug)]
 pub struct Player {
     pub user_id: usize,
     pub name: Option<String>,
-    pub sender: Option<mpsc::UnboundedSender<std::result::Result<Message, warp::Error>>>,
+    pub sender: mpsc::UnboundedSender<std::result::Result<Message, warp::Error>>
 }
 
 #[derive(Serialize)]
@@ -163,7 +166,8 @@ pub struct PublishToARoomRequest {
 pub enum UpdateRoomType {
     Start,
     Stop,
-    ColorChange
+    ColorChange,
+    Leave
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -175,8 +179,7 @@ pub struct UpdateRoomStateRequest {
 #[derive(Serialize, Debug)]
 pub struct CreateRoomResponse {
     pub room: RoomDesc,
-    pub url: String,
-    pub url_sockjs: String,
+    pub url: String
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -195,6 +198,10 @@ pub struct RoomDesc {
 
 #[derive(Debug)]
 pub struct UserNotFound;
+#[derive(Debug)]
+pub struct RoomNotFound;
+#[derive(Debug)]
+pub struct RoomFull;
 
 #[derive(Serialize)]
 pub struct ErrorMessage {
@@ -215,6 +222,8 @@ pub struct RoomIdParameter {
 }
 
 impl warp::reject::Reject for UserNotFound {}
+impl warp::reject::Reject for RoomNotFound {}
+impl warp::reject::Reject for RoomFull {}
 
 impl PlayerDesc {
     pub fn from_player(p: &Player, color: usize) -> PlayerDesc {

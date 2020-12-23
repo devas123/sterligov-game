@@ -1,9 +1,7 @@
 import { CONTENT_TYPE, X_USER_TOKEN } from "./const";
 import { createdAt, userId, userName, userToken } from "./stores";
 const base_url = __environment?.isProd ? "/api" : "http://localhost:8000";
-const ws_base_url = __environment?.isProd
-  ? `ws://${location.host}/api`
-  : "ws://localhost:8000";
+
 export const createRoomRequest = async (room_name: string, usrToken) => {
   const roomCreate = await fetch(`${base_url}/room`, {
     method: `POST`,
@@ -81,11 +79,28 @@ export const makeAMoveRequest = async (
   const headers = new Headers();
   headers.append(X_USER_TOKEN, userToken);
   headers.append(CONTENT_TYPE, `application/json; charset=UTF-8`);
-  await fetch(`${base_url}/message/${room_id}`, {
+  await fetch(`${base_url}/move/${room_id}`, {
     method: `POST`,
     body: JSON.stringify({
       path,
       calculate_path: false,
+    }),
+    headers,
+  });
+};
+
+export const chatMessageRequest = async (
+  message: string,
+  userToken: string,
+  room_id: string
+) => {
+  const headers = new Headers();
+  headers.append(X_USER_TOKEN, userToken);
+  headers.append(CONTENT_TYPE, `application/json; charset=UTF-8`);
+  await fetch(`${base_url}/chat/${room_id}`, {
+    method: `POST`,
+    body: JSON.stringify({
+      message
     }),
     headers,
   });
@@ -99,6 +114,19 @@ export const startGameRequest = async (userToken: string, room_id: string) => {
     method: `POST`,
     body: JSON.stringify({
       update_type: 'Start'
+    }),
+    headers,
+  });
+};
+
+export const leaveRoomRequest = async (userToken: string, room_id: string) => {
+  const headers = new Headers();
+  headers.append(X_USER_TOKEN, userToken);
+  headers.append(CONTENT_TYPE, `application/json; charset=UTF-8`);
+  await fetch(`${base_url}/update/${room_id}`, {
+    method: `POST`,
+    body: JSON.stringify({
+      update_type: 'Leave'
     }),
     headers,
   });
@@ -135,7 +163,7 @@ export const roomResolveRequest = async (room_id: string) =>
 export const createWebSocketForRoomRequest = (
   userToken: string,
   room_id: string
-) => new WebSocket(`${ws_base_url}/ws/${room_id}/${userToken}`);
+) => new EventSource(`${base_url}/sse/${room_id}/${userToken}`);
 
 export const getRoomPlayersRequest = async (room_id: string) => {
   const r = await fetch(`${base_url}/players?room_id=${room_id}`)
