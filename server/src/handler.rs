@@ -71,7 +71,7 @@ pub async fn handle_rejection(err: Rejection) -> std::result::Result<impl Reply,
         message = "METHOD_NOT_ALLOWED";
     } else if let Some(_) = err.find::<UserNotFound>() {
         code = StatusCode::UNAUTHORIZED;
-        message = "UNAUTHORIZED";
+        message = "User was not found";
     } else if let Some(_) = err.find::<CorsForbidden>() {
         code = StatusCode::BAD_REQUEST;
         message = "Header not allowed";
