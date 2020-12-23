@@ -13,9 +13,12 @@ use warp::reply::json;
 
 use crate::{HOST, PORT, Result, RoomHandle, RoomList, User, UserTokens, ws};
 use crate::game::GameState;
-use crate::model::{AddUserRequest, CreateRoomRequest, CreateRoomResponse, ErrorMessage, PlayerDesc, PublishToARoomRequest, RoomDesc, RoomIdParameter, RoomStateUpdate, TokenCreatedResponse, UpdateRoomStateRequest, UserNotFound, GameColorsUpdate};
+use crate::model::{AddUserRequest, CreateRoomRequest, CreateRoomResponse, ErrorMessage, PlayerDesc, PublishToARoomRequest, RoomDesc, RoomIdParameter, RoomStateUpdate, TokenCreatedResponse, UpdateRoomStateRequest, UserNotFound, GameColorsUpdate, RoomNotFound, RoomFull};
 use crate::model::UpdateRoomType::{ColorChange, Start, Stop};
-use crate::ws::send_update;
+use crate::ws::{send_update, ChatMessage, SendMessageRequest};
+use futures::Stream;
+use warp::filters::sse::ServerSentEvent;
+
 
 pub async fn get_rooms_handler(rooms: RoomList) -> Result<impl Reply> {
     let mut r: Vec<RoomDesc> = rooms.read().unwrap().iter().map(|(_, v)| { RoomDesc::from_room(v) }).collect();
@@ -33,10 +36,28 @@ pub async fn update_room_state_handler(room_id: String, body: UpdateRoomStateReq
     }
 }
 
-pub async fn publish_to_room_handler(room_id: String, body: PublishToARoomRequest, rooms: RoomList, user_id_opt: Option<usize>) -> Result<impl Reply> {
+pub async fn room_chat_message_handler(room_id: String, body: SendMessageRequest, rooms: RoomList, user: Option<User>) -> Result<impl Reply> {
+    if let Some(usr) = user {
+        if let Ok(lock) = rooms.try_read() {
+            if let Some(room) = lock.get(&room_id) {
+                send_update(room, &ChatMessage::new(usr.user_name.as_str(), usr.user_id, body.message.as_str()));
+                Ok(StatusCode::OK)
+            } else {
+                Err(warp::reject::custom(RoomNotFound))
+            }
+        } else {
+            error!("Log cannot be acquired");
+            Err(warp::reject::custom(RoomNotFound))
+        }
+    } else {
+        Err(warp::reject::custom(UserNotFound))
+    }
+}
+
+pub async fn make_a_move_handler(room_id: String, body: PublishToARoomRequest, rooms: RoomList, user_id_opt: Option<usize>) -> Result<impl Reply> {
     match user_id_opt {
         Some(user_id) => {
-            publish_to_room(room_id.clone(), user_id.clone(), rooms, body).await?;
+            make_a_move(room_id.clone(), user_id.clone(), rooms, body).await?;
             Ok(StatusCode::OK)
         }
         None => Err(warp::reject::custom(UserNotFound))
@@ -72,6 +93,12 @@ pub async fn handle_rejection(err: Rejection) -> std::result::Result<impl Reply,
     } else if let Some(_) = err.find::<UserNotFound>() {
         code = StatusCode::UNAUTHORIZED;
         message = "User was not found";
+    } else if let Some(_) = err.find::<RoomNotFound>() {
+        code = StatusCode::BAD_REQUEST;
+        message = "Room was not found";
+    } else if let Some(_) = err.find::<RoomFull>() {
+        code = StatusCode::BAD_REQUEST;
+        message = "Room room is full";
     } else if let Some(_) = err.find::<CorsForbidden>() {
         code = StatusCode::BAD_REQUEST;
         message = "Header not allowed";
@@ -90,7 +117,7 @@ pub async fn handle_rejection(err: Rejection) -> std::result::Result<impl Reply,
     Ok(warp::reply::with_status(json, code))
 }
 
-pub async fn create_room_handler(user_token: String, user_id_opt: Option<usize>, body: CreateRoomRequest, rooms: RoomList) -> Result<impl Reply> {
+pub async fn create_room_handler(user_id_opt: Option<usize>, body: CreateRoomRequest, rooms: RoomList) -> Result<impl Reply> {
     let user_id = match user_id_opt {
         None => {
             return Err(warp::reject::reject());
@@ -105,8 +132,7 @@ pub async fn create_room_handler(user_token: String, user_id_opt: Option<usize>,
         let room = create_room(room_id.clone(), user_id.clone(), room_name, rooms).await;
         Ok(json(&CreateRoomResponse {
             room,
-            url: format!("ws://{}:{}/ws/{}/{}", HOST, PORT, room_id.clone(), user_token),
-            url_sockjs: format!("http://{}:{}/ws/{}/{}", HOST, PORT, room_id.clone(), user_token),
+            url: format!("http://{}:{}/sse/{}", HOST, PORT, room_id.clone()),
         }))
     }
 }
@@ -199,7 +225,7 @@ async fn create_room(room_id: String, user_id: usize, room_name: String, rooms: 
     desc
 }
 
-async fn publish_to_room(room_id: String, user_id: usize, rooms: RoomList, request: PublishToARoomRequest) -> Result<&'static str> {
+async fn make_a_move(room_id: String, user_id: usize, rooms: RoomList, request: PublishToARoomRequest) -> Result<&'static str> {
     info!("Make a move, room: {}, user_id: {}, message: {:?}", room_id, user_id, request);
     if request.path.len() < 2 {
         error!("Path too short.");
@@ -294,14 +320,14 @@ pub async fn health_handler() -> Result<impl Reply> {
     Ok(StatusCode::OK)
 }
 
-pub async fn ws_handler(ws: warp::ws::Ws, room_id: String, user: Option<User>, rooms: RoomList) -> Result<impl Reply> {
-    let room = rooms.read().unwrap().get(&room_id).cloned();
-    if let Some(usr) = user {
-        match room {
-            Some(c) => Ok(ws.on_upgrade(move |socket| ws::client_connection(socket, room_id, usr, rooms, c))),
-            None => Err(warp::reject::not_found())
+pub fn sse_handler(room_id: String, user: Option<User>, rooms: RoomList) -> Result<impl Stream<Item = std::result::Result<impl ServerSentEvent + Send + 'static, warp::Error>> + Send + 'static> {
+    if let Some(r) = rooms.clone().write().unwrap().get_mut(&room_id) {
+        if let Some(usr) = user {
+            ws::client_connection(room_id, usr, r)
+        } else {
+            Err(warp::reject::custom(UserNotFound))
         }
     } else {
-        Err(warp::reject::not_found())
+        Err(warp::reject::custom(RoomNotFound))
     }
 }

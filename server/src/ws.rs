@@ -1,26 +1,32 @@
-use futures::{FutureExt, StreamExt};
-use log::{debug, error, info};
+use futures::{StreamExt, Stream};
+use log::{error, info};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
-use warp::filters::ws::{Message, WebSocket};
 
-use crate::{RoomHandle, RoomList, User};
-use crate::model::Player;
+use crate::{RoomHandle, User, Result};
+use crate::model::{Player, RoomFull, Message};
+use warp::filters::sse::ServerSentEvent;
+use warp::Error;
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ChatMessage<'a> {
-    name: &'a str,
-    by: &'a str,
-    message: &'a str,
+#[derive(Serialize, Debug)]
+pub struct ChatMessage {
+    name: String,
+    by: String,
+    message: String,
     user_id: usize
 }
 
-impl ChatMessage<'_> {
-    fn  new<'a>(by: &'a str, user_id: usize, message: &'a str) -> ChatMessage<'a> {
+#[derive(Deserialize, Debug)]
+pub struct SendMessageRequest {
+    pub message: String,
+}
+
+impl ChatMessage {
+    pub fn  new(by: &str, user_id: usize, message: &str) -> ChatMessage {
         return ChatMessage {
-            name: "chat_message",
-            by,
-            message,
+            name: "chat_message".to_string(),
+            by: by.to_string(),
+            message: message.to_string(),
             user_id
         }
     }
@@ -75,21 +81,23 @@ impl PlayerLeftUpdate {
 }
 
 //TODO: we have thread per connection here, maybe use queues/dispatching thread
-pub async fn client_connection(ws: WebSocket, room_id: String, user: User, rooms: RoomList, mut room: RoomHandle) {
-    let (player_ws_sender, mut player_ws_receiver) = ws.split();
+pub fn client_connection(room_id: String, user: User, room: &mut RoomHandle) -> Result<impl Stream<Item = std::result::Result<impl ServerSentEvent + Send + 'static, Error>> + Send + 'static>  {
     let (player_sender, player_receiver) = mpsc::unbounded_channel();
 
-    tokio::task::spawn(player_receiver.forward(player_ws_sender).map(|result| {
-        if let Err(e) = result {
-            error!("Error sending websocket msg: {}", e);
-        }
-    }));
+    // tokio::task::spawn(player_receiver.forward(player_sender).map(|result| {
+    //     if let Err(e) = result {
+    //         error!("Error sending sse msg: {}", e);
+    //     }
+    // }));
     if room.players.len() > 5 {
         error!("Room full");
+        Err(warp::reject::custom(RoomFull))
     } else if room.players.iter().any(|x| { x.user_id == user.user_id }) {
         info!("User already in the room.");
+        Err(warp::reject::custom(RoomFull))
     } else if room.game_started && room.game_state.as_ref().filter(|gs| { gs.players_colors.get(&user.user_id).is_some() }).is_none() {
         error!("Game is already started.");
+        Err(warp::reject::custom(RoomFull))
     } else {
         let color = room.game_state.as_ref().map(|gs| { gs.players_colors.get(&user.user_id).cloned() }).flatten();
         let default_color = room.game_state.as_ref().map(|gs| {
@@ -133,63 +141,62 @@ pub async fn client_connection(ws: WebSocket, room_id: String, user: User, rooms
             update.player_cones = gs.get_cones(&user.user_id);
         }
         info!("User with id {} connected to room {}", user.user_id, room_id);
+        send_update(&room, &update);
+        player_sender.send(Ok(Message::from_str("test".to_string()))).unwrap();
 
-        rooms.write().unwrap().insert(room_id.clone(), room);
-        match rooms.clone().write().unwrap().get(room_id.as_str()) {
-            None => {}
-            Some(updated_room) => {
-                send_update(&updated_room, &update);
-            }
-        }
+        Ok(player_receiver.map(|res| { res.map( |msg| {
+            info!("Message: {:?}", msg);
+            warp::sse::json(msg)
+        }) }))
 
-        while let Some(result) = player_ws_receiver.next().await {
-            let msg = match result {
-                Ok(msg) => msg,
-                Err(e) => {
-                    error!("Error receiving ws message for id: {}): {}", room_id, e);
-                    break;
-                }
-            };
-            client_msg(room_id.as_str(), &player_sender, msg, &rooms, &user).await;
-        }
-        match rooms.try_write() {
-            Ok(mut lock) => {
-                let mut remove_room = false;
-                if let Some(new_room) = lock.get_mut(room_id.as_str()) {
-                    new_room.remove_player(user.user_id);
-                    remove_room = new_room.players.len() == 0 && new_room.game_finished;
-                    let new_turn = if new_room.players.len() == 0 { 0 } else { new_room.active_player % new_room.players.len() };
-                    new_room.active_player = new_turn;
-                    info!("User {} disconnected from room {}", user.user_id, room_id);
-                    let upd = PlayerLeftUpdate::new(
-                        user.user_id,
-                        new_room.room_id.clone(),
-                        new_turn
-                    );
-                    send_update(new_room, &upd);
-                }
-                if remove_room {
-                    lock.remove(&room_id);
-                }
-            }
-            Err(e) => {
-                error!("Error while acquiring the lock. {:?}", e)
-            }
-        }
+        // while let Some(result) = player_ws_receiver.next().await {
+        //     let msg = match result {
+        //         Ok(msg) => msg,
+        //         Err(e) => {
+        //             error!("Error receiving ws message for id: {}): {}", room_id, e);
+        //             break;
+        //         }
+        //     };
+        //     client_msg(room_id.as_str(), &player_sender, msg, &rooms, &user).await;
+        // }
+        // match rooms.try_write() {
+        //     Ok(mut lock) => {
+        //         let mut remove_room = false;
+        //         if let Some(new_room) = lock.get_mut(room_id.as_str()) {
+        //             new_room.remove_player(user.user_id);
+        //             remove_room = new_room.players.len() == 0 && new_room.game_finished;
+        //             let new_turn = if new_room.players.len() == 0 { 0 } else { new_room.active_player % new_room.players.len() };
+        //             new_room.active_player = new_turn;
+        //             info!("User {} disconnected from room {}", user.user_id, room_id);
+        //             let upd = PlayerLeftUpdate::new(
+        //                 user.user_id,
+        //                 new_room.room_id.clone(),
+        //                 new_turn
+        //             );
+        //             send_update(new_room, &upd);
+        //         }
+        //         if remove_room {
+        //             lock.remove(&room_id);
+        //         }
+        //     }
+        //     Err(e) => {
+        //         error!("Error while acquiring the lock. {:?}", e)
+        //     }
+        // }
     }
 }
 
 pub fn send_update(rh: &RoomHandle, upd: &impl Serialize) {
     for p in &rh.players {
         if let Some(sender) = p.sender.as_ref() {
-            if let Err(msg) = sender.send(Ok(serde_json::ser::to_string(&upd).map(Message::text).unwrap())) {
+            if let Err(msg) = sender.send(Ok(Message::from_str(serde_json::ser::to_string(upd).unwrap()))) {
                 error!("Error while sending update to players. {:?}", msg)
             }
         }
     }
 }
 
-async fn client_msg(room_id: &str, sender: &mpsc::UnboundedSender<std::result::Result<Message, warp::Error>>, msg: Message, rooms: &RoomList, user: &User) {
+/*async fn client_msg(room_id: &str, sender: &mpsc::UnboundedSender<std::result::Result<T, warp::Error>>, msg: Message, rooms: &RoomList, user: &User) {
     debug!("Received message from {}: {:?}", room_id, msg);
     let message = match msg.to_str() {
         Ok(v) => v,
@@ -212,3 +219,4 @@ async fn client_msg(room_id: &str, sender: &mpsc::UnboundedSender<std::result::R
         // v.players = topics_req.;
     }
 }
+*/

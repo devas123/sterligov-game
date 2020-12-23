@@ -1,9 +1,9 @@
 use std::time::Instant;
 use crate::game::GameState;
 use tokio::sync::mpsc;
-use warp::filters::ws::Message;
 use serde::{Serialize, Deserialize};
 use log::{error};
+use serde_json::Value;
 
 #[derive(Debug, Clone)]
 pub struct RoomHandle {
@@ -83,16 +83,7 @@ impl RoomStateUpdate {
 }
 
 
-impl RoomHandle {
-    pub fn remove_player(&mut self, user_id: usize) {
-        for (ind, p) in self.players.iter().enumerate() {
-            if p.user_id == user_id {
-                self.players.remove(ind);
-                break;
-            }
-        }
-    }
-
+impl  RoomHandle {
     pub fn make_a_move(&mut self, path: Vec<(i32, i32)>, user_id: usize) -> std::result::Result<RoomUpdate, usize> {
         if let Some(gs) = self.game_state.as_mut() {
             let next = (self.active_player + 1) % self.players.len();
@@ -117,6 +108,25 @@ impl RoomHandle {
             }
         }
         Err(0)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Message {
+    pub data: Value
+}
+
+impl Message {
+    pub fn from_str(text: String) -> Message {
+        match serde_json::from_str(text.as_str()) {
+            Ok(data) => {
+                Message { data }
+            }
+            Err(e) => {
+                error!("Error when creating message from {}: {}", text, e);
+                Message { data: Value::Null }
+            }
+        }
     }
 }
 
@@ -175,8 +185,7 @@ pub struct UpdateRoomStateRequest {
 #[derive(Serialize, Debug)]
 pub struct CreateRoomResponse {
     pub room: RoomDesc,
-    pub url: String,
-    pub url_sockjs: String,
+    pub url: String
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -195,6 +204,10 @@ pub struct RoomDesc {
 
 #[derive(Debug)]
 pub struct UserNotFound;
+#[derive(Debug)]
+pub struct RoomNotFound;
+#[derive(Debug)]
+pub struct RoomFull;
 
 #[derive(Serialize)]
 pub struct ErrorMessage {
@@ -215,6 +228,8 @@ pub struct RoomIdParameter {
 }
 
 impl warp::reject::Reject for UserNotFound {}
+impl warp::reject::Reject for RoomNotFound {}
+impl warp::reject::Reject for RoomFull {}
 
 impl PlayerDesc {
     pub fn from_player(p: &Player, color: usize) -> PlayerDesc {
