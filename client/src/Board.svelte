@@ -10,6 +10,7 @@
   import { createEventDispatcher } from "svelte";
   import Triangle from "./Triangle.svelte";
   import EmptyTriangle from "./EmptyTriangle.svelte";
+import BoardPoint from "./BoardPoint.svelte";
   const dispatch = createEventDispatcher();
 
   function select(row: number, col: number) {
@@ -70,14 +71,6 @@
     return find_index(path, row, col) >= 0;
   }
 
-  function getConeColor(
-    cones: { [x: string]: number },
-    row: number,
-    col: number
-  ) {
-    return getColorString(getConeColorNumber(cones, row, col));
-  }
-
   function getConeColorNumber(
     cones: { [x: string]: number },
     row: number,
@@ -127,15 +120,7 @@
   const center_triangles = small_triangles_center.map((arr) =>
     triangle(EmptyTriangle, arr[0], arr[1], arr[2], "simple")
   );
-  const getDotRadius = (row, col, selectedCones) => {
-    const radius = isInCorner(row, col) ? dot_radius : dot_radius - 1;
-    return isSelected(selectedCones, row, col) ? radius * 1.6 : radius;
-  };
 
-  const getConeRadius = (row, col, selectedCones) => {
-    const radius = isInCorner(row, col) ? cone_radius : cone_radius - 1;
-    return isSelected(selectedCones, row, col) ? radius * 1.4 : radius;
-  };
 </script>
 
 <style>
@@ -150,38 +135,6 @@
     fill: rgb(175, 175, 175);
     stroke-width: 6px;
     stroke: black;
-  }
-
-  .big_point {
-    fill: black;
-    stroke-width: 1px;
-    stroke: rgb(255, 255, 255);
-  }
-  .board-point:hover {
-    opacity: 50%;
-    cursor: pointer;
-    stroke-width: 2px;
-    stroke: aliceblue;
-  }
-  .my-cone:hover {
-    cursor: pointer;
-  }
-  .selected {
-    stroke-width: 2px;
-  }
-
-  .board-point.selected {
-    stroke-width: 2px;
-    stroke: black;
-    fill: white;
-  }
-
-  .select-area {
-    opacity: 0;
-    fill: white;
-  }
-  .select-area:hover {
-    cursor: pointer;
   }
 </style>
 
@@ -203,7 +156,24 @@
 
   {#each pointCounts as p, i}
     {#each Array(p) as _, point}
-      <circle
+      <BoardPoint
+      cx={getXCoordinate(point, p, width)}
+      cy={getYCoordinate(i, height)}
+      dot_base_radius={dot_radius}
+      cone_base_radius={cone_radius}
+      row={i}
+      col={point}
+      can_select={canSelectCone(cones, selectedCones, i, point)}
+      is_cone={isCone(cones, i, point)}
+      should_highlight={my_color == getConeColorNumber(cones, i, point) && my_move}
+      cone_color={getConeColorNumber(cones, i, point)}
+      is_selected={isSelected(selectedCones, i, point)}
+      on:click={(_e) => select(i, point)}
+      >
+
+      
+      </BoardPoint>
+      <!-- <circle
         cx={getXCoordinate(point, p, width)}
         cy={getYCoordinate(i, height)}
         r={getDotRadius(i, point, selectedCones)}
@@ -216,7 +186,7 @@
         stroke-width="1"
         stroke="black"
         class={isCone(cones, i, point) ? 'cone' + (isSelected(selectedCones, i, point) ? ' selected' : '') + (my_color == getConeColorNumber(cones, i, point) && my_move ? ' my-cone' : '') : 'select-area'}
-        on:click={(_e) => select(i, point)} />
+        on:click={(_e) => select(i, point)} /> -->
     {/each}
   {/each}
   {#each highlightedPath as pathPoint}

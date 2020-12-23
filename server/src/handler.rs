@@ -18,7 +18,8 @@ use crate::model::UpdateRoomType::{ColorChange, Start, Stop};
 use crate::ws::send_update;
 
 pub async fn get_rooms_handler(rooms: RoomList) -> Result<impl Reply> {
-    let r: Vec<RoomDesc> = rooms.read().unwrap().iter().map(|(_, v)| { RoomDesc::from_room(v) }).collect();
+    let mut r: Vec<RoomDesc> = rooms.read().unwrap().iter().map(|(_, v)| { RoomDesc::from_room(v) }).collect();
+    r.sort_by(|k, p| { p.created_time.cmp(&k.created_time) });
     Ok(json(&r))
 }
 
