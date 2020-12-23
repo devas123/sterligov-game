@@ -366,7 +366,7 @@
       {:else}
         <p>Waiting for the game to start.</p>
         <p>You can select color</p>
-        <ColorSelect on:colorselected={(e) => selectColor(e.detail)} {players_colors} />
+        <ColorSelect selected={my_color} on:colorselected={(e) => selectColor(e.detail)} {players_colors} />
       {/if}
       <div class="constant"><button on:click={() => pop()}>Leave</button></div>
       <div class="users">

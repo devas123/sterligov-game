@@ -10,11 +10,10 @@
         RED,
         YELLOW,
     } from "./const";
-import { userId } from "./stores";
 
     let colors = [PURPLE, GREEN, ORANGE, YELLOW, RED, BLUE];
-    export let players_colors: Map<number, number>
-    let selected: number;
+    export let players_colors: Map<number, number>;
+    export let selected: number;
     const dispatch = createEventDispatcher();
     function selectColor() {
         if (selected) {
@@ -22,7 +21,6 @@ import { userId } from "./stores";
                 color: selected,
             };
             dispatch("colorselected", e);
-            selected = undefined;
         }
     }
 
@@ -33,6 +31,11 @@ import { userId } from "./stores";
         const colorsArray = Array.from(plrs_clrs.values());
         return clrs?.filter(c => !colorsArray.find(k => k === c));
     }
+
+    let freeColors = [];
+
+    $: freeColors = [...getFreeColors(colors, players_colors), selected];
+
 </script>
 
 <style>
@@ -40,7 +43,7 @@ import { userId } from "./stores";
 
 <!-- svelte-ignore a11y-no-onchange -->
 <select bind:value={selected} on:change={selectColor}>
-    {#each getFreeColors(colors, players_colors) as color}
-        <option value={color} selected={color === selected}>{getColorString(color)}</option>
+    {#each freeColors as color}
+        <option value={color}>{getColorString(color)}</option>
     {/each}
 </select>
