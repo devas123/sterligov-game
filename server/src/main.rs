@@ -63,11 +63,7 @@ async fn main() {
 
                 for (_, handler) in rs.iter_mut() {
                     handler.players.retain(|p: &Player| {
-                        if let Some(s) = p.sender.as_ref() {
-                            s.send(Ok(Message::from_str("test".to_string()))).is_ok()
-                        } else {
-                            false
-                        }
+                        p.sender.send(Ok(Message::event("test".to_string()))).is_ok()
                     });
                 }
             }

@@ -1,19 +1,21 @@
-use futures::{StreamExt, Stream};
+use futures::{Stream, StreamExt};
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
-
-use crate::{RoomHandle, User, Result};
-use crate::model::{Player, RoomFull, Message};
-use warp::filters::sse::ServerSentEvent;
 use warp::Error;
+use warp::filters::sse::ServerSentEvent;
+
+use crate::{Result, RoomHandle, User};
+use crate::model::{Message, Player, RoomFull};
+use serde::export::fmt::Debug;
+use tokio::sync::mpsc::UnboundedReceiver;
 
 #[derive(Serialize, Debug)]
 pub struct ChatMessage {
     name: String,
     by: String,
     message: String,
-    user_id: usize
+    user_id: usize,
 }
 
 #[derive(Deserialize, Debug)]
@@ -22,13 +24,13 @@ pub struct SendMessageRequest {
 }
 
 impl ChatMessage {
-    pub fn  new(by: &str, user_id: usize, message: &str) -> ChatMessage {
+    pub fn new(by: &str, user_id: usize, message: &str) -> ChatMessage {
         return ChatMessage {
             name: "chat_message".to_string(),
             by: by.to_string(),
             message: message.to_string(),
-            user_id
-        }
+            user_id,
+        };
     }
 }
 
@@ -68,9 +70,9 @@ impl PlayerJoinedUpdate {
 }
 
 impl PlayerLeftUpdate {
-    fn new(user_id: usize,
-           room_id: String,
-           next_turn: usize) -> PlayerLeftUpdate {
+    pub(crate) fn new(user_id: usize,
+                      room_id: String,
+                      next_turn: usize) -> PlayerLeftUpdate {
         return PlayerLeftUpdate {
             name: "player_left".to_string(),
             user_id,
@@ -81,9 +83,7 @@ impl PlayerLeftUpdate {
 }
 
 //TODO: we have thread per connection here, maybe use queues/dispatching thread
-pub fn client_connection(room_id: String, user: User, room: &mut RoomHandle) -> Result<impl Stream<Item = std::result::Result<impl ServerSentEvent + Send + 'static, Error>> + Send + 'static>  {
-    let (player_sender, player_receiver) = mpsc::unbounded_channel();
-
+pub fn client_connection(room_id: String, user: User, room: &mut RoomHandle) -> Result<impl Stream<Item=std::result::Result<impl ServerSentEvent + Send + 'static, Error>> + Send + 'static> {
     // tokio::task::spawn(player_receiver.forward(player_sender).map(|result| {
     //     if let Err(e) = result {
     //         error!("Error sending sse msg: {}", e);
@@ -91,9 +91,6 @@ pub fn client_connection(room_id: String, user: User, room: &mut RoomHandle) -> 
     // }));
     if room.players.len() > 5 {
         error!("Room full");
-        Err(warp::reject::custom(RoomFull))
-    } else if room.players.iter().any(|x| { x.user_id == user.user_id }) {
-        info!("User already in the room.");
         Err(warp::reject::custom(RoomFull))
     } else if room.game_started && room.game_state.as_ref().filter(|gs| { gs.players_colors.get(&user.user_id).is_some() }).is_none() {
         error!("Game is already started.");
@@ -122,15 +119,24 @@ pub fn client_connection(room_id: String, user: User, room: &mut RoomHandle) -> 
             user.user_name.clone(),
             color.clone().or(Some(default_color.clone())).unwrap(),
         );
-        let player = Player {
-            sender: Some(player_sender.clone()),
-            user_id: user.user_id,
-            name: Some(user.user_name.clone()),
+        let (player_sender, player_receiver) = mpsc::unbounded_channel();
+        let result = if let Some(p) = room.players.iter_mut().find(|p| p.user_id == user.user_id) {
+            p.sender = player_sender.clone();
+            wrap(player_receiver)
+        } else {
+            let result= wrap(player_receiver);
+            let player = Player {
+                sender: player_sender.clone(),
+                user_id: user.user_id,
+                name: Some(user.user_name.clone()),
+            };
+            room.players.push(player);
+            if room.players.len() == 1 {
+                room.created_by = user.user_id.clone();
+            }
+            result
         };
-        room.players.push(player);
-        if room.players.len() == 1 {
-            room.created_by = user.user_id.clone();
-        }
+        info!("User with id {} connected to room {}", user.user_id, room_id);
         if let Some(gs) = room.game_state.as_mut() {
             gs.players_colors.insert(user.user_id, color.clone().or(Some(default_color.clone())).unwrap());
             if color.is_none() {
@@ -140,14 +146,8 @@ pub fn client_connection(room_id: String, user: User, room: &mut RoomHandle) -> 
             }
             update.player_cones = gs.get_cones(&user.user_id);
         }
-        info!("User with id {} connected to room {}", user.user_id, room_id);
         send_update(&room, &update);
-        player_sender.send(Ok(Message::from_str("test".to_string()))).unwrap();
-
-        Ok(player_receiver.map(|res| { res.map( |msg| {
-            info!("Message: {:?}", msg);
-            warp::sse::json(msg)
-        }) }))
+        result
 
         // while let Some(result) = player_ws_receiver.next().await {
         //     let msg = match result {
@@ -186,13 +186,37 @@ pub fn client_connection(room_id: String, user: User, room: &mut RoomHandle) -> 
     }
 }
 
-pub fn send_update(rh: &RoomHandle, upd: &impl Serialize) {
+fn wrap(player_receiver: UnboundedReceiver<std::result::Result<Message, Error>>) -> Result<impl Stream<Item=std::result::Result<impl ServerSentEvent + Send + 'static, Error>> + Send + 'static> {
+    Ok(player_receiver.map(|res| {
+        res.map(|msg| {
+            info!("Message: {:?}", msg);
+            match msg {
+                Message::Text(text) => {
+                    warp::sse::data(text).into_a()
+                }
+
+                Message::Event(event) => {
+                    warp::sse::event(event).into_b()
+                }
+            }
+        })
+    }))
+}
+
+pub fn send_update(rh: &RoomHandle, upd: &(impl Serialize + Debug)) {
     for p in &rh.players {
-        if let Some(sender) = p.sender.as_ref() {
-            if let Err(msg) = sender.send(Ok(Message::from_str(serde_json::ser::to_string(upd).unwrap()))) {
-                error!("Error while sending update to players. {:?}", msg)
+        match serde_json::ser::to_string(upd) {
+            Ok(str) => {
+                if let Err(e) = p.sender.send(Ok(Message::Text(str))) {
+                    error!("Error while sending update  to players. {:?}, {:?}" , upd, e);
+
+                }
+            }
+            Err(msg) => {
+                error!("Error while serializing update {:?}, {:?}" , upd, msg);
             }
         }
+
     }
 }
 

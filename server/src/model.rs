@@ -3,9 +3,9 @@ use crate::game::GameState;
 use tokio::sync::mpsc;
 use serde::{Serialize, Deserialize};
 use log::{error};
-use serde_json::Value;
+use crate::model::Message::{Event};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct RoomHandle {
     pub room_id: String,
     pub winner: Option<usize>,
@@ -111,30 +111,23 @@ impl  RoomHandle {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Message {
-    pub data: Value
+#[derive(Debug)]
+pub enum  Message {
+    Text(String),
+    Event(String)
 }
 
 impl Message {
-    pub fn from_str(text: String) -> Message {
-        match serde_json::from_str(text.as_str()) {
-            Ok(data) => {
-                Message { data }
-            }
-            Err(e) => {
-                error!("Error when creating message from {}: {}", text, e);
-                Message { data: Value::Null }
-            }
-        }
+    pub fn event(evt: String) -> Message {
+        Event(evt)
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Player {
     pub user_id: usize,
     pub name: Option<String>,
-    pub sender: Option<mpsc::UnboundedSender<std::result::Result<Message, warp::Error>>>,
+    pub sender: mpsc::UnboundedSender<std::result::Result<Message, warp::Error>>
 }
 
 #[derive(Serialize)]
@@ -173,7 +166,8 @@ pub struct PublishToARoomRequest {
 pub enum UpdateRoomType {
     Start,
     Stop,
-    ColorChange
+    ColorChange,
+    Leave
 }
 
 #[derive(Deserialize, Debug, Clone)]

@@ -6,11 +6,13 @@
   import { pop } from "svelte-spa-router";
   import type { Move, Player, RoomDesc } from "./model";
   import {
+chatMessageRequest,
     colorChangeRequest,
     createWebSocketForRoomRequest,
     gameStateRequest,
     getRoomPlayersRequest,
-    makeAMoveRequest,
+leaveRoomRequest,
+        makeAMoveRequest,
     roomResolveRequest,
     startGameRequest,
     validatePathRequest,
@@ -26,14 +28,12 @@
   let players: Player[] = [];
   let cones = {};
   let selectedCones = [];
-  let socket: WebSocket;
+  let socket: EventSource;
   let moves: Move[] = [];
   let next_player_to_move = 0;
   let my_color: number;
   let players_colors = new Map<number, number>();
   let room_state: RoomDesc;
-  let tm;
-  let itvl;
   let connected = false;
   let chatMessages = [];
   let chatFocused = false;
@@ -100,12 +100,11 @@
   const roomRes = roomResolveRequest(params.id).then((r) => (room_state = r));
 
   function handleWsEvent(event) {
-    if (event.data === "pong") {
-      pong();
+    if (event.data === "test") {
       return;
     }
-    console.log("Message from server", event.data);
     const update = JSON.parse(event.data);
+    console.log("Data: ", update);
     const { name } = update;
     switch (name) {
       case "chat_message": {
@@ -173,12 +172,6 @@
   }
 
   onDestroy(() => {
-    if (tm) {
-      clearTimeout(tm);
-    }
-    if (itvl) {
-      clearInterval(itvl);
-    }
     if (socket) {
       try {
         socket.close();
@@ -188,15 +181,14 @@
     }
   });
 
-  function pong() {
-    clearTimeout(tm);
+  const leaveRoom = () => {
+    leaveRoomRequest($userToken, params.id);
+    pop();
   }
 
-  const handleWsConnect = (socket: WebSocket) => async (event) => {
+
+  const handleWsConnect = async (event) => {
     console.log("Connected to server", event);
-    clearTimeout(tm);
-    clearInterval(itvl);
-    itvl = setInterval(ping(socket), 10000);
     connected = true;
     await refreshRoomState().catch(console.error);
   };
@@ -207,23 +199,13 @@
     }
     connected = false;
     socket = createWebSocketForRoomRequest($userToken, params.id);
-    socket.addEventListener("open", handleWsConnect(socket));
-    // Listen for messages
-    socket.addEventListener("message", handleWsEvent);
-    socket.addEventListener("close", () => (connected = false));
-  };
-
-  const ping = (socket: WebSocket) => () => {
-    socket.send("ping");
-    clearTimeout(tm);
-    tm = setTimeout(recreateSocket, 5000);
+    socket.addEventListener('open', handleWsConnect);
+    socket.addEventListener('test', console.log);
+    socket.onmessage = handleWsEvent;
   };
 
   onMount(async () => {
-    socket = createWebSocketForRoomRequest($userToken, params.id);
-    socket.addEventListener("open", handleWsConnect(socket));
-    socket.addEventListener("message", handleWsEvent);
-    socket.addEventListener("close", () => (connected = false));
+    recreateSocket();
   });
 
   async function refreshRoomState() {
@@ -253,11 +235,11 @@
     return players[next_move];
   }
 
-  const sendChatMessage = (e) => {
+  const sendChatMessage = async (e) => {
     if (socket) {
       const { message } = e.detail;
       if (message) {
-        socket.send(message);
+        await chatMessageRequest(message, $userToken, params.id)
       }
     }
   };
@@ -368,7 +350,7 @@
         <p>You can select color</p>
         <ColorSelect selected={my_color} on:colorselected={(e) => selectColor(e.detail)} {players_colors} />
       {/if}
-      <div class="constant"><button on:click={() => pop()}>Leave</button></div>
+      <div class="constant"><button on:click={leaveRoom}>Leave</button></div>
       <div class="users">
         <p>Players:</p>
         <section class="users">

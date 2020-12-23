@@ -4,21 +4,21 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
+use futures::Stream;
 use log::{error, info};
 use uuid::Uuid;
 use warp::{Rejection, Reply};
 use warp::filters::cors::CorsForbidden;
+use warp::filters::sse::ServerSentEvent;
 use warp::hyper::StatusCode;
 use warp::reply::json;
 
 use crate::{HOST, PORT, Result, RoomHandle, RoomList, User, UserTokens, ws};
 use crate::game::GameState;
-use crate::model::{AddUserRequest, CreateRoomRequest, CreateRoomResponse, ErrorMessage, PlayerDesc, PublishToARoomRequest, RoomDesc, RoomIdParameter, RoomStateUpdate, TokenCreatedResponse, UpdateRoomStateRequest, UserNotFound, GameColorsUpdate, RoomNotFound, RoomFull};
+use crate::model::{AddUserRequest, CreateRoomRequest, CreateRoomResponse, ErrorMessage, GameColorsUpdate, PlayerDesc, PublishToARoomRequest, RoomDesc, RoomFull, RoomIdParameter, RoomNotFound, RoomStateUpdate, TokenCreatedResponse, UpdateRoomStateRequest, UpdateRoomType, UserNotFound};
 use crate::model::UpdateRoomType::{ColorChange, Start, Stop};
-use crate::ws::{send_update, ChatMessage, SendMessageRequest};
-use futures::Stream;
-use warp::filters::sse::ServerSentEvent;
-
+use crate::ws::{ChatMessage, PlayerLeftUpdate, send_update, SendMessageRequest};
+use std::cmp::max;
 
 pub async fn get_rooms_handler(rooms: RoomList) -> Result<impl Reply> {
     let mut r: Vec<RoomDesc> = rooms.read().unwrap().iter().map(|(_, v)| { RoomDesc::from_room(v) }).collect();
@@ -294,7 +294,7 @@ async fn update_room_state(room_id: String, user_id: usize, rooms: RoomList, req
                                         let new_gs = GameState {
                                             cones: gs.cones.clone(),
                                             players_colors: gs.players_colors.clone(),
-                                            moves: gs.moves.clone()
+                                            moves: gs.moves.clone(),
                                         };
                                         let update = GameColorsUpdate::new(r.room_id.as_str(), new_gs);
                                         send_update(r, &update);
@@ -311,6 +311,11 @@ async fn update_room_state(room_id: String, user_id: usize, rooms: RoomList, req
                     });
                 }
             }
+            UpdateRoomType::Leave => {
+                r.players.retain(|p| { p.user_id != user_id });
+                r.active_player %= max(r.players.len(), 1);
+                send_update(r, &PlayerLeftUpdate::new(user_id, room_id.clone(), r.active_player));
+            }
         }
     }
     info!("Finished.");
@@ -320,7 +325,7 @@ pub async fn health_handler() -> Result<impl Reply> {
     Ok(StatusCode::OK)
 }
 
-pub fn sse_handler(room_id: String, user: Option<User>, rooms: RoomList) -> Result<impl Stream<Item = std::result::Result<impl ServerSentEvent + Send + 'static, warp::Error>> + Send + 'static> {
+pub fn sse_handler(room_id: String, user: Option<User>, rooms: RoomList) -> Result<impl Stream<Item=std::result::Result<impl ServerSentEvent + Send + 'static, warp::Error>> + Send + 'static> {
     if let Some(r) = rooms.clone().write().unwrap().get_mut(&room_id) {
         if let Some(usr) = user {
             ws::client_connection(room_id, usr, r)
