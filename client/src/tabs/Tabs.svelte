@@ -50,7 +50,8 @@
 		height: 100%;
 		display: flex;
 		flex-direction: column;
-		border: 1px solid blanchedalmond;
+		border: 1px solid rgb(43, 36, 27);
+		border-radius: 3px;
 		min-height: 0;
 	}
 </style>

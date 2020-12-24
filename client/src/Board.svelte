@@ -1,8 +1,6 @@
 <script lang="ts">
   import {
     pointCounts,
-    isInCorner,
-    getColorString,
     small_triangles_coordinates,
     small_triangles_center,
     NEUTRAL,
@@ -30,6 +28,7 @@ import BoardPoint from "./BoardPoint.svelte";
   let height = (width * Math.sqrt(5)) / 2;
   export let my_color: number;
   export let my_move: boolean;
+  export let game_started: boolean;
   export let cones = {};
   export let selectedCones = [];
   export let highlightedPath = [];
@@ -134,6 +133,10 @@ import BoardPoint from "./BoardPoint.svelte";
   .big_circle {
     fill: rgb(175, 175, 175);
     stroke-width: 6px;
+    stroke: rgb(99, 98, 98);
+  }
+
+  .big_circle.active {
     stroke: black;
   }
 </style>
@@ -143,7 +146,8 @@ import BoardPoint from "./BoardPoint.svelte";
     cx={getXCoordinate(5, pointCounts[10], width)}
     cy={getYCoordinate(10, height)}
     r={height / 2 - 10}
-    class="big_circle" />
+    class="big_circle"
+    class:active={my_move && game_started} />
   {#each big_triangles as bt}
     <svelte:component this={bt.component} {...bt.props} />
   {/each}

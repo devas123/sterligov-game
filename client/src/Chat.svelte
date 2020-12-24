@@ -1,9 +1,11 @@
 <script lang="ts">
     import { createEventDispatcher } from "svelte";
     import { afterUpdate, beforeUpdate, bind, onMount } from "svelte/internal";
+import { getColorValue, getContrast } from "./const";
     import { userId } from "./stores";
 
     export let messages = [];
+    export let players_colors: Map<number,number>;
     let dispatch = createEventDispatcher();
     let inputmessage;
     let div;
@@ -67,13 +69,11 @@
         width: 100%;
     }
     .chat-line.own {
-        background-color: rgb(163, 124, 65);
         align-self: flex-end;
     }
     .chat-line.own,
     .chat-line.own *,
     .chat-line.own > * {
-        background-color: rgb(163, 124, 65);
         text-align: right;
         border-radius: 1em 1em 0 1em;
     }
@@ -92,6 +92,7 @@
     input[type="text"] {
         padding-right: 2em;
         width: 100%;
+        margin: 0;
     }
     .embedded {
         position: absolute;
@@ -105,7 +106,7 @@
 
 <div class="chat-container" bind:this={div}>
     {#each messages as message}
-        <div class="chat-line" class:own={+$userId === +message?.user_id}>
+        <div class="chat-line" class:own={+$userId === +message?.user_id} style="background-color: {getColorValue(players_colors.get(+message?.user_id))}; color: {getContrast(players_colors.get(+message?.user_id))}">
             <div class="chat-username">{message?.by}</div>
             <div class="chat-message">{message?.message}</div>
         </div>

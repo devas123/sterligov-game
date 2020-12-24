@@ -2,17 +2,17 @@
   import { onMount, onDestroy } from "svelte";
   import Board from "./Board.svelte";
   import { getColorString, getColorValue } from "./const";
-  import { userId, userName, userToken } from "./stores";
+  import { userId, userToken } from "./stores";
   import { pop } from "svelte-spa-router";
   import type { Move, Player, RoomDesc } from "./model";
   import {
-chatMessageRequest,
+    chatMessageRequest,
     colorChangeRequest,
     createWebSocketForRoomRequest,
     gameStateRequest,
     getRoomPlayersRequest,
-leaveRoomRequest,
-        makeAMoveRequest,
+    leaveRoomRequest,
+    makeAMoveRequest,
     roomResolveRequest,
     startGameRequest,
     validatePathRequest,
@@ -41,10 +41,9 @@ leaveRoomRequest,
   export let params: { id: any };
   export let highlightedPath = [];
 
+  const onFocus = () => (chatFocused = true);
+  const onBlur = () => (chatFocused = false);
 
-  const onFocus = () => chatFocused=true;
-  const onBlur = () => chatFocused=false;
-  
   async function validatePath(path: number[][]) {
     return validatePathRequest(path, $userToken, params.id);
   }
@@ -184,8 +183,7 @@ leaveRoomRequest,
   const leaveRoom = () => {
     leaveRoomRequest($userToken, params.id);
     pop();
-  }
-
+  };
 
   const handleWsConnect = async (event) => {
     console.log("Connected to server", event);
@@ -199,9 +197,9 @@ leaveRoomRequest,
     }
     connected = false;
     socket = createWebSocketForRoomRequest($userToken, params.id);
-    socket.addEventListener('open', handleWsConnect);
-    socket.addEventListener('test', console.log);
-    socket.addEventListener('error', (e: any) => {
+    socket.addEventListener("open", handleWsConnect);
+    socket.addEventListener("test", console.log);
+    socket.addEventListener("error", (e: any) => {
       console.error("Error in sse:", e);
       if (e.readyState != EventSource.OPEN) {
         connected = false;
@@ -245,7 +243,7 @@ leaveRoomRequest,
     if (socket) {
       const { message } = e.detail;
       if (message) {
-        await chatMessageRequest(message, $userToken, params.id)
+        await chatMessageRequest(message, $userToken, params.id);
       }
     }
   };
@@ -253,7 +251,12 @@ leaveRoomRequest,
   async function handleKeydown(
     event: KeyboardEvent & { currentTarget: EventTarget & Window }
   ) {
-    if (!chatFocused && event.code === "Space" && selectedCones && selectedCones.length > 1) {
+    if (
+      !chatFocused &&
+      event.code === "Space" &&
+      selectedCones &&
+      selectedCones.length > 1
+    ) {
       await makeAMove(selectedCones);
     }
   }
@@ -297,6 +300,9 @@ leaveRoomRequest,
   .line {
     padding: 5px 0;
   }
+  .users {
+    padding: 1rem 0;
+  }
 </style>
 
 <svelte:window on:keydown={async (event) => await handleKeydown(event)} />
@@ -313,6 +319,7 @@ leaveRoomRequest,
       {highlightedPath}
       {cones}
       {selectedCones}
+      game_started={room_state.game_started}
       my_move={getNextPlayer(players, next_player_to_move)?.user_id == $userId} />
     <div class="controls">
       {#if !connected}
@@ -326,7 +333,7 @@ leaveRoomRequest,
       {/if}
       {#if room_state.game_started && !room_state.game_finished}
         {#if getNextPlayer(players, next_player_to_move)?.user_id == $userId}
-          <h4>Your move!</h4>
+          <h3>Your move!</h3>
         {:else}
           <p>
             Waiting for
@@ -354,22 +361,24 @@ leaveRoomRequest,
       {:else}
         <p>Waiting for the game to start.</p>
         <p>You can select color</p>
-        <ColorSelect selected={my_color} on:colorselected={(e) => selectColor(e.detail)} {players_colors} />
+        <ColorSelect
+          selected={my_color}
+          on:colorselected={(e) => selectColor(e.detail)}
+          {players_colors} />
       {/if}
       <div class="constant"><button on:click={leaveRoom}>Leave</button></div>
-      <div class="users">
-        <p>Players:</p>
+      <section>
+        <div>Players:</div>
         <section class="users">
-          <ul>
             {#each players as player, i}
-              <li>
+              <div>
+                <span style="color: {getColorValue(players_colors.get(player.user_id))}">&#9679;</span>
                 <span
                   class={i === next_player_to_move ? 'bold' : ''}>{player.name}</span>
-              </li>
+                </div>
             {/each}
-          </ul>
-        </section>
-      </div>
+          </section>
+      </section>
       <Tabs>
         <TabList>
           <Tab>Chat</Tab>
@@ -377,9 +386,10 @@ leaveRoomRequest,
         </TabList>
         <TabPanel>
           <Chat
-          on:blur={onBlur}
-          on:focus={onFocus}
+            on:blur={onBlur}
+            on:focus={onFocus}
             messages={chatMessages}
+            {players_colors}
             on:messagesent={(e) => sendChatMessage(e)} />
         </TabPanel>
         <TabPanel>

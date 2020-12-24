@@ -12,14 +12,13 @@
 	button {
 		background: none;
 		border: none;
-		border-bottom: 2px solid white;
 		border-radius: 0;
 		margin: 0;
 		color: rgb(32, 19, 19);
 	}
 	
 	.selected {
-		border-bottom: 2px solid teal;
+		border-bottom: 2px solid rgb(232, 255, 255);
 		color: #333;
 	}
 </style>

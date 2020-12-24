@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { getColorString, isInCorner } from "./const";
+    import { getColorValue, isInCorner } from "./const";
 
     export let cx: number;
     export let cy: number;
@@ -61,7 +61,7 @@
         {cx}
         {cy}
         r={cone_radius}
-        fill={getColorString(cone_color)}
+        fill={getColorValue(cone_color)}
         stroke-width="1"
         stroke="black"
         class={is_cone ? 'cone' + (is_selected ? ' selected' : '') + (should_highlight ? ' my-cone' : '') : 'select-area'}

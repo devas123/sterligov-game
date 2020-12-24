@@ -9,7 +9,7 @@
     width: 60%;
     text-align: left;
     margin: 0 auto;
-    background-color: rgb(221, 198, 167);
+    background-color: rgb(220, 211, 129);
     min-height: 600px;
     min-width: 800px;
     padding-left: 1rem;

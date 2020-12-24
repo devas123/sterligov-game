@@ -130,13 +130,26 @@
     export function getColorValue(color: number) {
       switch (color) {
         case 1: return 'purple';
-        case 2: return 'green';
+        case 2: return '#32BC23';
         case 3: return 'orange';
-        case 4: return 'yellow';
+        case 4: return '#fbff2a';
         case 5: return 'red';
         case 6: return 'blue';
         default:
           return 'black';
+      }
+    }
+
+    export function getContrast(color: number) {
+      switch (color) {
+        case 1: return 'white';
+        case 2: return 'black';
+        case 3: return 'black';
+        case 4: return 'black';
+        case 5: return 'white';
+        case 6: return 'white';
+        default:
+          return 0;
       }
     }
     
