@@ -201,6 +201,12 @@ leaveRoomRequest,
     socket = createWebSocketForRoomRequest($userToken, params.id);
     socket.addEventListener('open', handleWsConnect);
     socket.addEventListener('test', console.log);
+    socket.addEventListener('error', (e: any) => {
+      console.error("Error in sse:", e);
+      if (e.readyState != EventSource.OPEN) {
+        connected = false;
+      }
+    });
     socket.onmessage = handleWsEvent;
   };
 

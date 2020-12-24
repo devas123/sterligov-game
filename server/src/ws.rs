@@ -9,6 +9,7 @@ use crate::{Result, RoomHandle, User};
 use crate::model::{Message, Player, RoomFull};
 use serde::export::fmt::Debug;
 use tokio::sync::mpsc::UnboundedReceiver;
+use std::time::Instant;
 
 #[derive(Serialize, Debug)]
 pub struct ChatMessage {
@@ -82,13 +83,7 @@ impl PlayerLeftUpdate {
     }
 }
 
-//TODO: we have thread per connection here, maybe use queues/dispatching thread
 pub fn client_connection(room_id: String, user: User, room: &mut RoomHandle) -> Result<impl Stream<Item=std::result::Result<impl ServerSentEvent + Send + 'static, Error>> + Send + 'static> {
-    // tokio::task::spawn(player_receiver.forward(player_sender).map(|result| {
-    //     if let Err(e) = result {
-    //         error!("Error sending sse msg: {}", e);
-    //     }
-    // }));
     if room.players.len() > 5 {
         error!("Room full");
         Err(warp::reject::custom(RoomFull))
@@ -129,6 +124,7 @@ pub fn client_connection(room_id: String, user: User, room: &mut RoomHandle) -> 
                 sender: player_sender.clone(),
                 user_id: user.user_id,
                 name: Some(user.user_name.clone()),
+                last_active: Instant::now()
             };
             room.players.push(player);
             if room.players.len() == 1 {
@@ -148,41 +144,6 @@ pub fn client_connection(room_id: String, user: User, room: &mut RoomHandle) -> 
         }
         send_update(&room, &update);
         result
-
-        // while let Some(result) = player_ws_receiver.next().await {
-        //     let msg = match result {
-        //         Ok(msg) => msg,
-        //         Err(e) => {
-        //             error!("Error receiving ws message for id: {}): {}", room_id, e);
-        //             break;
-        //         }
-        //     };
-        //     client_msg(room_id.as_str(), &player_sender, msg, &rooms, &user).await;
-        // }
-        // match rooms.try_write() {
-        //     Ok(mut lock) => {
-        //         let mut remove_room = false;
-        //         if let Some(new_room) = lock.get_mut(room_id.as_str()) {
-        //             new_room.remove_player(user.user_id);
-        //             remove_room = new_room.players.len() == 0 && new_room.game_finished;
-        //             let new_turn = if new_room.players.len() == 0 { 0 } else { new_room.active_player % new_room.players.len() };
-        //             new_room.active_player = new_turn;
-        //             info!("User {} disconnected from room {}", user.user_id, room_id);
-        //             let upd = PlayerLeftUpdate::new(
-        //                 user.user_id,
-        //                 new_room.room_id.clone(),
-        //                 new_turn
-        //             );
-        //             send_update(new_room, &upd);
-        //         }
-        //         if remove_room {
-        //             lock.remove(&room_id);
-        //         }
-        //     }
-        //     Err(e) => {
-        //         error!("Error while acquiring the lock. {:?}", e)
-        //     }
-        // }
     }
 }
 
@@ -219,28 +180,3 @@ pub fn send_update(rh: &RoomHandle, upd: &(impl Serialize + Debug)) {
 
     }
 }
-
-/*async fn client_msg(room_id: &str, sender: &mpsc::UnboundedSender<std::result::Result<T, warp::Error>>, msg: Message, rooms: &RoomList, user: &User) {
-    debug!("Received message from {}: {:?}", room_id, msg);
-    let message = match msg.to_str() {
-        Ok(v) => v,
-        Err(_) => return
-    };
-
-    if message == "ping" || message == "ping\n" {
-        if let Err(err) = sender.send(Ok(Message::text("pong"))) {
-            error!("Error while sending pong message. {:?}", err)
-        }
-        return;
-    }
-
-    let chat_message = ChatMessage::new(user.user_name.as_str(), user.user_id, message);
-
-    let mut locked = rooms.write().unwrap();
-    if let Some(room) = locked.get_mut(room_id) {
-        debug!("Message {} by user {}", chat_message.message, room_id);
-        send_update(room, &chat_message);
-        // v.players = topics_req.;
-    }
-}
-*/

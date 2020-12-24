@@ -127,7 +127,8 @@ impl Message {
 pub struct Player {
     pub user_id: usize,
     pub name: Option<String>,
-    pub sender: mpsc::UnboundedSender<std::result::Result<Message, warp::Error>>
+    pub sender: mpsc::UnboundedSender<std::result::Result<Message, warp::Error>>,
+    pub last_active: Instant
 }
 
 #[derive(Serialize)]

@@ -12,7 +12,7 @@ use serde::de::DeserializeOwned;
 use model::{RoomHandle, User};
 use tokio::time::{Duration, Instant};
 use std::ops::Add;
-use log::info;
+use log::{info};
 use crate::model::{Player, Message};
 
 mod handler;
@@ -23,7 +23,7 @@ mod model;
 const HOST: &str = "127.0.0.1";
 const PORT: usize = 8000;
 const USER_TOKEN_HEADER: &str = "X-User-Token";
-const ROOM_TTL_SEC: u64 = 600;
+const ROOM_TTL_SEC: u64 = 60;
 
 
 type Result<T> = std::result::Result<T, Rejection>;
@@ -62,8 +62,13 @@ async fn main() {
                 });
 
                 for (_, handler) in rs.iter_mut() {
+                    for p in handler.players.iter_mut() {
+                        if p.sender.send(Ok(Message::event("test".to_string()))).is_ok() {
+                            p.last_active = std::time::Instant::now();
+                        }
+                    }
                     handler.players.retain(|p: &Player| {
-                        p.sender.send(Ok(Message::event("test".to_string()))).is_ok()
+                        std::time::Instant::now() - p.last_active < Duration::from_secs(ROOM_TTL_SEC)
                     });
                 }
             }
@@ -137,14 +142,10 @@ async fn main() {
         .and(warp::path::param())
         .and(with_user_from_token(users.clone()))
         .and(with_rooms(rooms.clone()))
-        .map(|room_id: String, user: Option<User>, rooms: RoomList| {
-            warp::sse::reply(warp::sse::keep_alive().stream(handler::sse_handler(room_id, user, rooms).unwrap()))
+        .and_then(|room_id: String, user: Option<User>, rooms: RoomList| async {
+            handler::sse_handler(room_id, user, rooms).map(|stream| { warp::sse::reply(warp::sse::keep_alive().stream(stream)) })
         });
 
-    // let publish = warp::path!("publish")
-    //     .and(warp::body::json())
-    //     .and(with_rooms(rooms.clone()))
-    //     .and_then(handler::publish_handler);
     let cors = warp::cors()
         .allow_any_origin()
         .allow_methods(vec!["POST", "GET", "DELETE", "OPTIONS"])
