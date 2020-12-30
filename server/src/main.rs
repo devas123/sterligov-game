@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::env;
 use std::sync::{Arc, RwLock};
@@ -14,6 +14,8 @@ use tokio::time::{Duration, Instant};
 use std::ops::Add;
 use log::{info};
 use crate::model::{Player, Message};
+use crate::ws::{send_update, PlayerLeftUpdate};
+use std::cmp::max;
 
 mod handler;
 mod ws;
@@ -24,6 +26,7 @@ const HOST: &str = "127.0.0.1";
 const PORT: usize = 8000;
 const USER_TOKEN_HEADER: &str = "X-User-Token";
 const ROOM_TTL_SEC: u64 = 60;
+const PLAYER_TTL_SEC: u64 = 40;
 
 
 type Result<T> = std::result::Result<T, Rejection>;
@@ -68,8 +71,30 @@ async fn main() {
                         }
                     }
                     handler.players.retain(|p: &Player| {
-                        std::time::Instant::now() - p.last_active < Duration::from_secs(ROOM_TTL_SEC)
+                        std::time::Instant::now() - p.last_active < Duration::from_secs(PLAYER_TTL_SEC)
                     });
+                    let players = &handler.players;
+                    let mut removed_players = Vec::new();
+                    let mut removed_colors = HashSet::new();
+                    let room_id = handler.room_id.clone();
+                    let game_started = handler.game_started;
+                    handler.active_player %= max(handler.players.len(), 1);
+                    if let Some(gs) = handler.game_state.as_mut() {
+                        gs.players_colors.retain(|id, c| {
+                            let valid = players.iter().any(|p|{ p.user_id == *id});
+                            if !valid {
+                                removed_players.push((*id, *c));
+                                removed_colors.insert(*c);
+                            }
+                            valid
+                        });
+                        if !game_started {
+                           gs.cones.retain(|(_, _), color| { !removed_colors.contains(color) })
+                        }
+                    }
+                    for (user_id, player_color) in removed_players.iter() {
+                        send_update(handler, &PlayerLeftUpdate::new(*user_id, room_id.clone(), handler.active_player, !game_started, *player_color));
+                    }
                 }
             }
         }

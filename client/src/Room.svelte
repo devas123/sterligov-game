@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import Board from "./Board.svelte";
-  import { getColorString, getColorValue } from "./const";
+  import { getColorString, getColorValue, NEUTRAL } from "./const";
   import { userId, userToken } from "./stores";
   import { pop } from "svelte-spa-router";
   import type { Move, Player, RoomDesc } from "./model";
@@ -96,7 +96,7 @@
     return startGameRequest($userToken, params.id);
   }
 
-  const roomRes = roomResolveRequest(params.id).then((r) => (room_state = r));
+  const roomRes = () => roomResolveRequest(params.id).then((r) => (room_state = r));
 
   function handleWsEvent(event) {
     if (event.data === "test") {
@@ -117,6 +117,7 @@
             ...players,
             { user_id, color: player_color, name: player_name },
           ];
+          players_colors = players_colors.set(+user_id, player_color)
         }
 
         const new_cones = { ...cones };
@@ -138,9 +139,24 @@
         break;
       }
       case "player_left": {
-        let { user_id, next_turn } = update;
+        let { user_id, next_turn, remove_cones, player_color } = update;
         players = players.filter((p) => p.user_id !== user_id);
         next_player_to_move = next_turn;
+        const new_pc = new Map<number,number>();
+        players_colors.forEach((v, k) => { if (k != user_id) { new_pc.set(k, v) } });
+        players_colors = new_pc;
+        if (remove_cones && player_color != NEUTRAL) {
+           const new_cones = {...cones};
+           for (const key in new_cones) {
+             if (Object.prototype.hasOwnProperty.call(new_cones, key)) {
+               const color = new_cones[key];
+               if (color == player_color) {
+                 delete new_cones[key];
+               }
+             }
+           }
+           cones = new_cones;
+        }
         break;
       }
       case "move_made":
@@ -307,7 +323,7 @@
 
 <svelte:window on:keydown={async (event) => await handleKeydown(event)} />
 
-{#await roomRes}
+{#await roomRes()}
   <p>Loading room state</p>
 {:then _}
   <div class="main-grid">

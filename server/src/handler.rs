@@ -14,11 +14,12 @@ use warp::hyper::StatusCode;
 use warp::reply::json;
 
 use crate::{HOST, PORT, Result, RoomHandle, RoomList, User, UserTokens, ws};
-use crate::game::GameState;
+use crate::game::{GameState, NEUTRAL};
 use crate::model::{AddUserRequest, CreateRoomRequest, CreateRoomResponse, ErrorMessage, GameColorsUpdate, PlayerDesc, PublishToARoomRequest, RoomDesc, RoomFull, RoomIdParameter, RoomNotFound, RoomStateUpdate, TokenCreatedResponse, UpdateRoomStateRequest, UpdateRoomType, UserNotFound};
 use crate::model::UpdateRoomType::{ColorChange, Start, Stop};
 use crate::ws::{ChatMessage, PlayerLeftUpdate, send_update, SendMessageRequest};
 use std::cmp::max;
+use std::collections::HashSet;
 
 pub async fn get_rooms_handler(rooms: RoomList) -> Result<impl Reply> {
     let mut r: Vec<RoomDesc> = rooms.read().unwrap().iter().map(|(_, v)| { RoomDesc::from_room(v) }).collect();
@@ -312,9 +313,25 @@ async fn update_room_state(room_id: String, user_id: usize, rooms: RoomList, req
                 }
             }
             UpdateRoomType::Leave => {
+                let mut player_color = NEUTRAL;
                 r.players.retain(|p| { p.user_id != user_id });
+                if !r.game_started {
+                    if let Some(gs) = r.game_state.as_mut() {
+                        let mut removed_colors = HashSet::new();
+                        player_color = *gs.players_colors.get(&user_id).unwrap_or_else(|| &NEUTRAL);
+                        gs.players_colors.retain(|pl, c| {
+                           if *pl != user_id {
+                               removed_colors.insert(*c);
+                               true
+                           } else {
+                               false
+                           }
+                        });
+                        gs.cones.retain(|(_,_), c| { !removed_colors.contains(c) });
+                    }
+                }
                 r.active_player %= max(r.players.len(), 1);
-                send_update(r, &PlayerLeftUpdate::new(user_id, room_id.clone(), r.active_player));
+                send_update(r, &PlayerLeftUpdate::new(user_id, room_id.clone(), r.active_player, !r.game_started, player_color));
             }
         }
     }

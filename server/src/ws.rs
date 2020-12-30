@@ -49,8 +49,10 @@ pub struct PlayerJoinedUpdate {
 pub struct PlayerLeftUpdate {
     name: String,
     user_id: usize,
+    player_color: usize,
     room_id: String,
     next_turn: usize,
+    remove_cones: bool
 }
 
 impl PlayerJoinedUpdate {
@@ -73,12 +75,16 @@ impl PlayerJoinedUpdate {
 impl PlayerLeftUpdate {
     pub(crate) fn new(user_id: usize,
                       room_id: String,
-                      next_turn: usize) -> PlayerLeftUpdate {
+                      next_turn: usize,
+                      remove_cones: bool,
+                      player_color: usize) -> PlayerLeftUpdate {
         return PlayerLeftUpdate {
             name: "player_left".to_string(),
             user_id,
             room_id,
             next_turn,
+            remove_cones,
+            player_color
         };
     }
 }

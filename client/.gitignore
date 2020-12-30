@@ -4,5 +4,6 @@
 .DS_Store
 .metals
 .vscode
+.idea
 
 package-lock.json

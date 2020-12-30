@@ -3,15 +3,15 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use serde::{Deserialize, Serialize, Serializer};
 use serde::ser::SerializeMap;
 
-const NEUTRAL: usize = 0;
-const PURPLE: usize = 1;
-const GREEN: usize = 2;
-const ORANGE: usize = 3;
-const YELLOW: usize = 4;
-const RED: usize = 5;
-const BLUE: usize = 6;
-const POINT_COUNTS: [usize; 21] = [1, 2, 3, 4, 5, 16, 15, 14, 13, 12, 11, 12, 13, 14, 15, 16, 5, 4, 3, 2, 1];
-const POINTS: &'static [&'static [usize]] = &[
+pub const NEUTRAL: usize = 0;
+pub const PURPLE: usize = 1;
+pub const GREEN: usize = 2;
+pub const ORANGE: usize = 3;
+pub const YELLOW: usize = 4;
+pub const RED: usize = 5;
+pub const BLUE: usize = 6;
+pub const POINT_COUNTS: [usize; 21] = [1, 2, 3, 4, 5, 16, 15, 14, 13, 12, 11, 12, 13, 14, 15, 16, 5, 4, 3, 2, 1];
+pub const POINTS: &'static [&'static [usize]] = &[
     &[PURPLE],
     &[PURPLE, PURPLE],
     &[PURPLE, PURPLE, PURPLE],

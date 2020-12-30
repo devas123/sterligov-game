@@ -51,7 +51,7 @@ import { getColorValue, getContrast } from "./const";
         height: 100%;
         min-height: 0;
         white-space:nowrap;
-        overflow: scroll;
+        overflow-y: auto;
         -webkit-overflow-scrolling: touch;    
     }
     
@@ -88,7 +88,7 @@ import { getColorValue, getContrast } from "./const";
     }
     .chat-message {
         margin-bottom: 4px;
-        overflow-wrap: break-word;
+        overflow-wrap: anywhere;
         word-break: break-all;
         word-wrap: break-word;
     }
