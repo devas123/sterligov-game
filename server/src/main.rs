@@ -96,6 +96,8 @@ async fn main() {
                         send_update(handler, &PlayerLeftUpdate::new(*user_id, room_id.clone(), handler.active_player, !game_started, *player_color));
                     }
                 }
+            } else {
+                info!("Could not acquire lock for removing stale rooms.");
             }
         }
     });

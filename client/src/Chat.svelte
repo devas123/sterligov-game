@@ -1,11 +1,11 @@
 <script lang="ts">
     import { createEventDispatcher } from "svelte";
     import { afterUpdate, beforeUpdate, bind, onMount } from "svelte/internal";
-import { getColorValue, getContrast } from "./const";
+    import { getColorValue, getContrast } from "./const";
     import { userId } from "./stores";
 
     export let messages = [];
-    export let players_colors: Map<number,number>;
+    export let players_colors: Map<number, number>;
     let dispatch = createEventDispatcher();
     let inputmessage;
     let div;
@@ -48,13 +48,14 @@ import { getColorValue, getContrast } from "./const";
         display: flex;
         flex-direction: column;
         width: 100%;
+        max-width: 100%;
+        min-width: 100%;
         height: 100%;
         min-height: 0;
-        white-space:nowrap;
         overflow-y: auto;
-        -webkit-overflow-scrolling: touch;    
+        -webkit-overflow-scrolling: touch;
     }
-    
+
     .chat-line {
         display: flex;
         flex-direction: column;
@@ -88,9 +89,17 @@ import { getColorValue, getContrast } from "./const";
     }
     .chat-message {
         margin-bottom: 4px;
+        -ms-word-break: break-all;
+        /* Adds a hyphen where the word breaks, if supported (No Blink) */
+        -ms-hyphens: auto;
+        -moz-hyphens: auto;
+        -webkit-hyphens: auto;
+        hyphens: auto;
         overflow-wrap: anywhere;
         word-break: break-all;
         word-wrap: break-word;
+        display: inline-block;
+        max-width: 100%;
     }
     input[type="text"] {
         padding-right: 2em;
@@ -109,7 +118,10 @@ import { getColorValue, getContrast } from "./const";
 
 <div class="chat-container" bind:this={div}>
     {#each messages as message}
-        <div class="chat-line" class:own={+$userId === +message?.user_id} style="background-color: {getColorValue(players_colors.get(+message?.user_id))}; color: {getContrast(players_colors.get(+message?.user_id))}">
+        <div
+            class="chat-line"
+            class:own={+$userId === +message?.user_id}
+            style="background-color: {getColorValue(players_colors.get(+message?.user_id))}; color: {getContrast(players_colors.get(+message?.user_id))}">
             <div class="chat-username">{message?.by}</div>
             <div class="chat-message">{message?.message}</div>
         </div>
@@ -126,7 +138,6 @@ import { getColorValue, getContrast } from "./const";
 
     <!-- svelte-ignore a11y-missing-attribute -->
     <a on:click={sendAndReset}><i
-        class="embedded fa fa-paper-plane"
-        aria-hidden="true"
-         /></a>
+            class="embedded fa fa-paper-plane"
+            aria-hidden="true" /></a>
 </div>
