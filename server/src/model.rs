@@ -88,24 +88,23 @@ impl  RoomHandle {
         if let Some(gs) = self.game_state.as_mut() {
             let next = (self.active_player + 1) % self.players.len();
             let p = (path[0].0 as usize, path[0].1 as usize);
-            if let Some(user_color) = gs.players_colors.get(&user_id) {
-                if let Some(color) = gs.cones.get(&p) {
-                    if *color == *user_color {
-                        let update = gs.update_cones(&path, &user_id)
-                            .map(|(path, game_finished)| {
-                                self.active_player = next;
-                                if game_finished {
-                                    self.winner = Some(user_id.clone());
-                                    self.game_finished = true;
-                                }
-                                RoomUpdate::new_with_finished(user_id, path, next.clone(), game_finished)
-                            });
-                        return update;
-                    }
-                } else {
-                    error!("Could not find user {} in cones at position: {:?}. Cones: {:?}", user_id, p, gs.cones);
+            if let Some(id) = gs.cones.get(&p) {
+                if *id == user_id {
+                    let update = gs.update_cones(&path, &user_id)
+                        .map(|(path, game_finished)| {
+                            self.active_player = next;
+                            if game_finished {
+                                self.winner = Some(user_id);
+                                self.game_finished = true;
+                            }
+                            RoomUpdate::new_with_finished(user_id, path, next.clone(), game_finished)
+                        });
+                    return update;
                 }
+            } else {
+                error!("Could not find user {} in cones at position: {:?}. Cones: {:?}", user_id, p, gs.cones);
             }
+
         }
         Err(0)
     }

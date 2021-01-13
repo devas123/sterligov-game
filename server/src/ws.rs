@@ -105,26 +105,27 @@ pub fn client_connection(room_id: String, user: User, room: &mut RoomHandle) -> 
     } else {
         let color = room.game_state.as_ref().map(|gs| { gs.players_colors.get(&user.user_id).cloned() }).flatten();
         let default_color = room.game_state.as_ref().map(|gs| {
-            let mut color = 1;
-            while color < 7 {
+            let mut c = 1;
+            while c < 7 {
                 info!("Getting default color, current colors: {:?}", gs.players_colors);
                 for (pl, pl_col) in gs.players_colors.iter() {
-                    info!("Getting default color: user: {}, already used color: {}, testing color: {}", *pl, *pl_col, color);
-                    if *pl_col == color {
-                        color += 1;
+                    info!("Getting default color: user: {}, already used color: {}, testing color: {}", *pl, *pl_col, c);
+                    if *pl_col == c {
+                        c += 1;
                         continue;
                     }
                 }
                 break;
             }
-            color
+            c
         }).or(Some(*&room.players.len() + 1)).unwrap();
+        let player_color = color.unwrap_or_else(|| default_color);
         let mut update = PlayerJoinedUpdate::new(
             user.user_id,
             room_id.to_string(),
             vec![],
             user.user_name.clone(),
-            color.clone().or(Some(default_color.clone())).unwrap(),
+            player_color,
             false
         );
         let (player_sender, player_receiver) = mpsc::unbounded_channel();
@@ -149,9 +150,8 @@ pub fn client_connection(room_id: String, user: User, room: &mut RoomHandle) -> 
         };
         info!("User with id {} connected to room {}", user.user_id, room_id);
         if let Some(gs) = room.game_state.as_mut() {
-            gs.players_colors.insert(user.user_id, color.clone().or(Some(default_color.clone())).unwrap());
             if color.is_none() {
-                if let Err(_) = gs.add_cones(default_color) {
+                if let Err(_) = gs.add_cones(user.user_id, player_color) {
                     error!("Error while adding cones for player {}", user.user_id)
                 }
             }

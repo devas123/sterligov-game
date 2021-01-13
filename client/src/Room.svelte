@@ -122,7 +122,7 @@
             players = [
               ...players.slice(0, ind),
               { ...player, ready: true },
-              ...players.slice(ind + 1)
+              ...players.slice(ind + 1),
             ];
           }
         } else {
@@ -131,11 +131,22 @@
         break;
       }
       case "player_joined": {
-        let { user_id, player_cones, player_name, player_color, player_ready } = update;
+        let {
+          user_id,
+          player_cones,
+          player_name,
+          player_color,
+          player_ready,
+        } = update;
         if (!players.find((p) => p.user_id === user_id)) {
           players = [
             ...players,
-            { user_id, color: player_color, name: player_name, ready: player_ready },
+            {
+              user_id,
+              color: player_color,
+              name: player_name,
+              ready: player_ready,
+            },
           ];
           players_colors = players_colors.set(+user_id, player_color);
         }
@@ -152,7 +163,7 @@
         for (let index = 0; index < player_cones.length; index++) {
           new_cones[
             `${player_cones[index][0]},${player_cones[index][1]}`
-          ] = player_color;
+          ] = players_colors.get(user_id);
         }
         cones = new_cones;
         // console.log(cones);
@@ -204,8 +215,8 @@
         break;
       case "game_state":
         const { cones: c, players_colors: pc } = update.game;
-        cones = c;
         players_colors = new Map(Object.entries(pc).map(([a, b]) => [+a, +b]));
+        cones = getConesWithColors(c);
         break;
     }
   }
@@ -254,14 +265,14 @@
 
   async function refreshRoomState() {
     players = await getRoomPlayersRequest(params.id);
-    // console.log(`Players: ${JSON.stringify(players)}`);
     const gameStateRes = await gameStateRequest(params.id);
     const cones_res = gameStateRes || {};
     const { cones: cns, players_colors: plrs_clrs, moves: mvs } = cones_res;
-    cones = { ...cones, ...cns };
+    console.log(`cones request result:`, cones_res);
     players_colors = new Map(
       Object.entries(plrs_clrs).map(([a, b]) => [+a, +b])
     );
+    cones = { ...cones, ...getConesWithColors(cns) };
     moves = [];
     mvs.forEach((m) => {
       const player = players.find((p) => p.color === m[0]);
@@ -296,6 +307,17 @@
       await makeAMove(selectedCones);
     }
   }
+
+  const getConesWithColors = (c) => {
+    const cns = {};
+    for (const key in c) {
+      if (Object.prototype.hasOwnProperty.call(c, key)) {
+        const id = c[key];
+        cns[key] = players_colors.get(id);
+      }
+    }
+    return cns;
+  };
 
   const selectColor = async ({ color }: { color: number }) => {
     await colorChangeRequest($userToken, params.id, color);
@@ -381,7 +403,9 @@
       {#if +$userId == room_state.created_by}
         <!-- svelte-ignore empty-block -->
         {#if !room_state.game_started && !room_state.game_finished}
-          <button on:click={startGame} disabled={!connected || !everyone_ready}>Start game</button>
+          <button
+            on:click={startGame}
+            disabled={!connected || !everyone_ready}>Start game</button>
         {:else if !room_state.game_started}{/if}
       {/if}
       {#if room_state.game_started && !room_state.game_finished}

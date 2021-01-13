@@ -19,7 +19,6 @@ use crate::model::{AddUserRequest, CreateRoomRequest, CreateRoomResponse, ErrorM
 use crate::model::UpdateRoomType::{ColorChange, Start, Stop};
 use crate::ws::{ChatMessage, PlayerLeftUpdate, send_update, SendMessageRequest};
 use std::cmp::max;
-use std::collections::HashSet;
 
 pub async fn get_rooms_handler(rooms: RoomList) -> Result<impl Reply> {
     let mut r: Vec<RoomDesc> = rooms.read().unwrap().iter().map(|(_, v)| { RoomDesc::from_room(v) }).collect();
@@ -305,25 +304,24 @@ async fn update_room_state(room_id: String, user_id: usize, rooms: RoomList, req
                         if new_color > 0 && new_color < 7 {
                             if let Some(gs) = r.game_state.as_mut() {
                                 if !gs.players_colors.iter().any(|(id, color)| { *color == new_color && *id != user_id }) {
-                                    let mut old = 0;
-                                    if let Some(old_color) = gs.players_colors.insert(user_id, new_color) {
-                                        gs.cones.retain(|(_, _), color| { *color != old_color });
-                                        old = old_color;
-                                    }
-                                    if let Ok(_) = gs.add_cones(new_color) {
-                                        let new_gs = GameState {
-                                            cones: gs.cones.clone(),
-                                            players_colors: gs.players_colors.clone(),
-                                            moves: gs.moves.clone(),
-                                        };
-                                        let update = GameColorsUpdate::new(r.room_id.as_str(), new_gs);
-                                        send_update(r, &update);
-                                    } else if old > 0 {
-                                        error!("Error when adding cones to the board.");
-                                        if let Err(_) = gs.add_cones(old) {
-                                            error!("Error when adding old cones too :(");
+                                    if !gs.players_colors.values().any(|v| { *v == new_color }) {
+                                        gs.remove_cones(user_id);
+                                        match gs.add_cones(user_id, new_color) {
+                                            Ok(_) => {
+                                                let new_gs = GameState {
+                                                    cones: gs.cones.clone(),
+                                                    players_colors: gs.players_colors.clone(),
+                                                    moves: gs.moves.clone(),
+                                                };
+                                                let update = GameColorsUpdate::new(r.room_id.as_str(), new_gs);
+                                                send_update(r, &update);
+                                            }
+                                            Err(_) => {
+                                                error!("Error when adding cones to the board.");
+                                            }
                                         }
-                                        gs.players_colors.insert(user_id, old);
+                                    }  else {
+                                        error!("Error when adding cones to the board.");
                                     }
                                 }
                             }
@@ -336,17 +334,9 @@ async fn update_room_state(room_id: String, user_id: usize, rooms: RoomList, req
                 r.players.retain(|p| { p.user_id != user_id });
                 if !r.game_started {
                     if let Some(gs) = r.game_state.as_mut() {
-                        let mut removed_colors = HashSet::new();
                         player_color = *gs.players_colors.get(&user_id).unwrap_or_else(|| &NEUTRAL);
-                        gs.players_colors.retain(|pl, c| {
-                           if *pl != user_id {
-                               removed_colors.insert(*c);
-                               true
-                           } else {
-                               false
-                           }
-                        });
-                        gs.cones.retain(|(_,_), c| { !removed_colors.contains(c) });
+                        gs.players_colors.remove(&user_id);
+                        gs.cones.retain(|(_,_), id| { user_id != *id });
                     }
                 }
                 r.active_player %= max(r.players.len(), 1);
