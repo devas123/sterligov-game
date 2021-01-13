@@ -174,23 +174,7 @@ import BoardPoint from "./BoardPoint.svelte";
       is_selected={isSelected(selectedCones, i, point)}
       on:click={(_e) => select(i, point)}
       >
-
-      
       </BoardPoint>
-      <!-- <circle
-        cx={getXCoordinate(point, p, width)}
-        cy={getYCoordinate(i, height)}
-        r={getDotRadius(i, point, selectedCones)}
-        class={(canSelectCone(cones, selectedCones, i, point) ? 'board-point' : '') + (isInCorner(i, point) ? ' big_point' : '') + (isSelected(selectedCones, i, point) ? ' selected' : '')} />
-      <circle
-        cx={getXCoordinate(point, p, width)}
-        cy={getYCoordinate(i, height)}
-        r={isCone(cones, i, point) ? getConeRadius(i, point, selectedCones) : cone_radius * 1.5}
-        fill={getConeColor(cones, i, point)}
-        stroke-width="1"
-        stroke="black"
-        class={isCone(cones, i, point) ? 'cone' + (isSelected(selectedCones, i, point) ? ' selected' : '') + (my_color == getConeColorNumber(cones, i, point) && my_move ? ' my-cone' : '') : 'select-area'}
-        on:click={(_e) => select(i, point)} /> -->
     {/each}
   {/each}
   {#each highlightedPath as pathPoint}

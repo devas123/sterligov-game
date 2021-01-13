@@ -2,6 +2,7 @@ export interface Player {
   user_id: number;
   color: number;
   name: string;
+  ready: boolean;
 }
 
 export interface Move {

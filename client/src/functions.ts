@@ -106,6 +106,22 @@ export const chatMessageRequest = async (
   });
 };
 
+export const setReadyRequest = async (
+  userToken: string,
+  room_id: string
+) => {
+  const headers = new Headers();
+  headers.append(X_USER_TOKEN, userToken);
+  headers.append(CONTENT_TYPE, `application/json; charset=UTF-8`);
+  await fetch(`${base_url}/chat/${room_id}`, {
+    method: `POST`,
+    body: JSON.stringify({
+      set_ready: true
+    }),
+    headers,
+  });
+};
+
 export const startGameRequest = async (userToken: string, room_id: string) => {
   const headers = new Headers();
   headers.append(X_USER_TOKEN, userToken);
