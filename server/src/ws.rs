@@ -7,9 +7,9 @@ use warp::filters::sse::ServerSentEvent;
 
 use crate::{Result, RoomHandle, User};
 use crate::model::{Message, Player, RoomFull};
-use serde::export::fmt::Debug;
 use tokio::sync::mpsc::UnboundedReceiver;
 use std::time::Instant;
+use core::fmt::Debug;
 
 #[derive(Serialize, Debug)]
 pub struct ChatMessage {
