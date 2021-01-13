@@ -180,4 +180,5 @@ processToken,
   {/if}
   <div style="font-weight: bold; margin-bottom: 1em;">Release notes:</div>
   <div>22.12.20: added chat and color select</div>
+  <div>13.01.21: added "Ready" button</div>
 </div>
