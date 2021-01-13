@@ -39,16 +39,35 @@ pub async fn update_room_state_handler(room_id: String, body: UpdateRoomStateReq
 
 pub async fn room_chat_message_handler(room_id: String, body: SendMessageRequest, rooms: RoomList, user: Option<User>) -> Result<impl Reply> {
     if let Some(usr) = user {
-        if let Ok(lock) = rooms.try_read() {
-            if let Some(room) = lock.get(&room_id) {
-                send_update(room, &ChatMessage::new(usr.user_name.as_str(), usr.user_id, body.message.as_str()));
-                Ok(StatusCode::OK)
+        let mut set_ready = None;
+        if let Some(_) = body.set_ready {
+            if let Ok(mut lock) = rooms.try_write() {
+                if let Some(room) = lock.get_mut(&room_id) {
+                    for player in room.players.iter_mut() {
+                        if player.user_id == usr.user_id {
+                            player.ready = true;
+                            set_ready = Some(true);
+                        }
+                    }
+                }
             } else {
+                error!("Lock cannot be acquired to set ready for player {}", usr.user_id);
+            }
+        }
+        if body.message.is_some() || set_ready.is_some() {
+            if let Ok(lock) = rooms.try_read() {
+                if let Some(room) = lock.get(&room_id) {
+                    send_update(room, &ChatMessage::new(usr.user_name.as_str(), usr.user_id, body.message, set_ready));
+                    Ok(StatusCode::OK)
+                } else {
+                    Err(warp::reject::custom(RoomNotFound))
+                }
+            } else {
+                error!("Lock cannot be acquired");
                 Err(warp::reject::custom(RoomNotFound))
             }
         } else {
-            error!("Log cannot be acquired");
-            Err(warp::reject::custom(RoomNotFound))
+            Ok(StatusCode::OK)
         }
     } else {
         Err(warp::reject::custom(UserNotFound))
@@ -273,15 +292,15 @@ async fn update_room_state(room_id: String, user_id: usize, rooms: RoomList, req
         info!("Found the room: {}, created_by {} at {:?}", r.name, r.created_by, r.created_time);
         match request.update_type {
             Start | Stop => {
-                if r.created_by == user_id {
+                if r.created_by == user_id && r.players.iter().all(|p| { p.ready }) {
                     r.game_started = request.update_type == Start;
                     send_update(r, &RoomStateUpdate::new(r));
                 } else {
-                    error!("User {} did not create the room, he can't update the state.", user_id)
+                    error!("Cannot start game for room {:?}.", r)
                 }
             }
             ColorChange => {
-                if !r.game_started {
+                if !r.game_started && !r.players.iter().any(|p| {p.ready && p.user_id == user_id}) {
                     request.new_color.map(move |new_color| {
                         if new_color > 0 && new_color < 7 {
                             if let Some(gs) = r.game_state.as_mut() {

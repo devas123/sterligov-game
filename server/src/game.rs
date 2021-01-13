@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use serde::{Deserialize, Serialize, Serializer};
 use serde::ser::SerializeMap;
+use std::collections::vec_deque::VecDeque;
 
 pub const NEUTRAL: usize = 0;
 pub const PURPLE: usize = 1;

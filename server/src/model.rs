@@ -128,6 +128,7 @@ pub struct Player {
     pub user_id: usize,
     pub name: Option<String>,
     pub sender: mpsc::UnboundedSender<std::result::Result<Message, warp::Error>>,
+    pub ready: bool,
     pub last_active: Instant
 }
 
@@ -215,6 +216,7 @@ pub struct PlayerDesc {
     pub name: String,
     pub color: usize,
     pub user_id: usize,
+    pub ready: bool
 }
 
 #[derive(Deserialize)]
@@ -232,6 +234,7 @@ impl PlayerDesc {
             name: p.name.as_ref().cloned().or_else(|| { Some("Player".to_string()) }).unwrap(),
             color,
             user_id: p.user_id,
+            ready: p.ready
         }
     }
 }

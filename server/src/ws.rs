@@ -15,21 +15,24 @@ use std::time::Instant;
 pub struct ChatMessage {
     name: String,
     by: String,
-    message: String,
+    message: Option<String>,
+    ready: Option<bool>,
     user_id: usize,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct SendMessageRequest {
-    pub message: String,
+    pub message: Option<String>,
+    pub set_ready: Option<bool>
 }
 
 impl ChatMessage {
-    pub fn new(by: &str, user_id: usize, message: &str) -> ChatMessage {
+    pub fn new(by: &str, user_id: usize, message: Option<String>, ready: Option<bool>) -> ChatMessage {
         return ChatMessage {
             name: "chat_message".to_string(),
             by: by.to_string(),
-            message: message.to_string(),
+            message,
+            ready,
             user_id,
         };
     }
@@ -43,6 +46,7 @@ pub struct PlayerJoinedUpdate {
     player_cones: Vec<(usize, usize)>,
     player_name: String,
     player_color: usize,
+    player_ready: bool
 }
 
 #[derive(Serialize, Debug)]
@@ -60,7 +64,8 @@ impl PlayerJoinedUpdate {
            room_id: String,
            player_cones: Vec<(usize, usize)>,
            player_name: String,
-           player_color: usize) -> PlayerJoinedUpdate {
+           player_color: usize,
+           player_ready: bool) -> PlayerJoinedUpdate {
         return PlayerJoinedUpdate {
             name: "player_joined".to_string(),
             user_id,
@@ -68,6 +73,7 @@ impl PlayerJoinedUpdate {
             player_cones,
             player_name,
             player_color,
+            player_ready
         };
     }
 }
@@ -119,10 +125,12 @@ pub fn client_connection(room_id: String, user: User, room: &mut RoomHandle) -> 
             vec![],
             user.user_name.clone(),
             color.clone().or(Some(default_color.clone())).unwrap(),
+            false
         );
         let (player_sender, player_receiver) = mpsc::unbounded_channel();
         let result = if let Some(p) = room.players.iter_mut().find(|p| p.user_id == user.user_id) {
             p.sender = player_sender.clone();
+            update.player_ready = p.ready;
             wrap(player_receiver)
         } else {
             let result= wrap(player_receiver);
@@ -130,7 +138,8 @@ pub fn client_connection(room_id: String, user: User, room: &mut RoomHandle) -> 
                 sender: player_sender.clone(),
                 user_id: user.user_id,
                 name: Some(user.user_name.clone()),
-                last_active: Instant::now()
+                last_active: Instant::now(),
+                ready: false
             };
             room.players.push(player);
             if room.players.len() == 1 {
