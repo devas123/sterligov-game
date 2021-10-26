@@ -12,10 +12,11 @@ use serde::de::DeserializeOwned;
 use model::{RoomHandle, User};
 use tokio::time::{Duration, Instant};
 use std::ops::Add;
-use log::{info};
-use crate::model::{Player, Message};
+use log::{info,error};
+use crate::model::{Player, Message, MoveTimerUpdate, TurnChangeUpdate};
 use crate::ws::{send_update, PlayerLeftUpdate};
 use std::cmp::max;
+use tokio::task::JoinHandle;
 
 mod handler;
 mod ws;
@@ -33,6 +34,7 @@ type Result<T> = std::result::Result<T, Rejection>;
 type RoomList = Arc<RwLock<HashMap<String, RoomHandle>>>;
 type UserTokens = Arc<RwLock<LruCache<String, User>>>;
 
+
 fn create_default_path<T>(path: &'static str, rooms: RoomList, users: UserTokens) -> impl Filter<Extract=(String, T, RoomList, Option<usize>, ), Error=Rejection> + Clone
 where T: DeserializeOwned + Send {
     return warp::path(path)
@@ -41,6 +43,28 @@ where T: DeserializeOwned + Send {
         .and(warp::body::json())
         .and(with_rooms(rooms))
         .and(with_userid(users))
+}
+
+fn start_timer(rooms: RoomList, timeout: usize, user_id: usize, room_id: String) -> JoinHandle<()> {
+    let mut interval = tokio::time::interval_at(Instant::now().add(Duration::from_secs(1)), Duration::from_secs(1));
+    tokio::spawn( async move {
+        let mut i = timeout;
+        let local_rooms = rooms.clone();
+        loop {
+            interval.tick().await;
+            i -= 1;
+            if let Some(r) = local_rooms.read().unwrap().get(room_id.as_str()) {
+                send_update(r, &MoveTimerUpdate::new(i, user_id));
+                if i <= 0 {
+                    send_update(r, &TurnChangeUpdate::new(RoomHandle::next_player(r.active_player, r.players.len())));
+                    break
+                }
+            } else {
+                error!("Could not find room {}", room_id);
+                break
+            }
+        }
+    })
 }
 
 #[tokio::main]

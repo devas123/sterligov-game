@@ -53,14 +53,47 @@ impl RoomUpdate {
 #[derive(Debug, Clone, Serialize)]
 pub struct RoomStateUpdate {
     name: String,
-    pub room: RoomDesc
+    pub room: RoomDesc,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MoveTimerUpdate {
+    name: String,
+    pub timer_value: usize,
+    pub user_id: usize,
+}
+
+
+impl MoveTimerUpdate {
+    pub fn new(timer_value: usize, user_id: usize) -> MoveTimerUpdate {
+        MoveTimerUpdate {
+            name: "move_timer".to_string(),
+            timer_value,
+            user_id,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TurnChangeUpdate {
+    name: String,
+    pub turn_goes_to: usize
+}
+
+impl TurnChangeUpdate {
+    pub fn new(turn_goes_to: usize) -> TurnChangeUpdate {
+        TurnChangeUpdate {
+            name: "turn_change".to_string(),
+            turn_goes_to
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct GameColorsUpdate<'a> {
     name: &'a str,
     pub room_id: &'a str,
-    pub game: GameState
+    pub game: GameState,
 }
 
 impl GameColorsUpdate<'_> {
@@ -83,10 +116,13 @@ impl RoomStateUpdate {
 }
 
 
-impl  RoomHandle {
+impl RoomHandle {
+    pub fn next_player(player: usize, total_players: usize) -> usize {
+        return (player + 1) % total_players;
+    }
     pub fn make_a_move(&mut self, path: Vec<(i32, i32)>, user_id: usize) -> std::result::Result<RoomUpdate, usize> {
         if let Some(gs) = self.game_state.as_mut() {
-            let next = (self.active_player + 1) % self.players.len();
+            let next = RoomHandle::next_player(self.active_player, self.players.len());
             let p = (path[0].0 as usize, path[0].1 as usize);
             if let Some(id) = gs.cones.get(&p) {
                 if *id == user_id {
@@ -104,7 +140,6 @@ impl  RoomHandle {
             } else {
                 error!("Could not find user {} in cones at position: {:?}. Cones: {:?}", user_id, p, gs.cones);
             }
-
         }
         Err(0)
     }
