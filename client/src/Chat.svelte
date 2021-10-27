@@ -126,7 +126,7 @@
             <div class="chat-message">{message?.message}</div>
         </div>
     {/each}
-    <div class="fill" />
+    <div class="fill"></div>
 </div>
 <div class="input-line">
     <input
@@ -139,5 +139,5 @@
     <!-- svelte-ignore a11y-missing-attribute -->
     <a on:click={sendAndReset}><i
             class="embedded fa fa-paper-plane"
-            aria-hidden="true" /></a>
+            aria-hidden="true"></i></a>
 </div>

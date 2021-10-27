@@ -1,5 +1,6 @@
-import { CONTENT_TYPE, X_USER_TOKEN } from "./const";
-import { createdAt, userId, userName, userToken } from "./stores";
+import {CONTENT_TYPE, X_USER_TOKEN} from "./const";
+import {createdAt, userId, userName, userToken} from "./stores";
+
 const base_url = __environment?.isProd ? "/api" : "http://localhost:8000";
 
 export const createRoomRequest = async (room_name: string, usrToken) => {
@@ -34,7 +35,7 @@ export const refreshTokenRequest = async (token: string) => {
   })
     .then((user) => (user.status == 200 ? user.json() : Promise.reject(user)))
     .catch((err) => {
-      // console.log(`error while refreshing token`, err);
+      console.log(`error while refreshing token`, err);
       clearToken();
       Promise.reject();
     });
@@ -167,9 +168,7 @@ export const roomResolveRequest = async (room_id: string) =>
   fetch(`${base_url}/room/${room_id}`)
     .then(async (res) => {
       if (res.status == 200) {
-        const r = await res.json();
-        // console.log(`Received room state:`, r);
-        return r;
+        return await res.json();
       } else {
         return Promise.reject(res);
       }
@@ -191,9 +190,7 @@ export const getRoomPlayersRequest = async (room_id: string) => {
       }
     })
     .catch(console.error);
-  const received = r || [];
-  // console.log(received);
-  return received;
+  return r || [];
 };
 
 export const gameStateRequest = async (room_id: string) =>
