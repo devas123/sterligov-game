@@ -13,7 +13,7 @@ use warp::filters::sse::ServerSentEvent;
 use warp::hyper::StatusCode;
 use warp::reply::json;
 
-use crate::{HOST, PORT, Result, RoomHandle, RoomList, User, UserTokens, ws};
+use crate::{cancel_timer, HOST, PORT, Result, RoomHandle, RoomList, RoomTimersList, start_timer, User, UserTokens, ws};
 use crate::game::{GameState, NEUTRAL};
 use crate::model::{AddUserRequest, CreateRoomRequest, CreateRoomResponse, ErrorMessage, GameColorsUpdate, PlayerDesc, PublishToARoomRequest, RoomDesc, RoomFull, RoomIdParameter, RoomNotFound, RoomStateUpdate, TokenCreatedResponse, UpdateRoomStateRequest, UpdateRoomType, UserNotFound};
 use crate::model::UpdateRoomType::{ColorChange, Start, Stop};
@@ -26,10 +26,10 @@ pub async fn get_rooms_handler(rooms: RoomList) -> Result<impl Reply> {
     Ok(json(&r))
 }
 
-pub async fn update_room_state_handler(room_id: String, body: UpdateRoomStateRequest, rooms: RoomList, user_id_opt: Option<usize>) -> Result<impl Reply> {
+pub async fn update_room_state_handler(room_id: String, body: UpdateRoomStateRequest, rooms: RoomList, user_id_opt: Option<usize>, rooms_timers: RoomTimersList) -> Result<impl Reply> {
     match user_id_opt {
         Some(user_id) => {
-            update_room_state(room_id.clone(), user_id.clone(), rooms, body).await;
+            update_room_state(room_id.clone(), user_id.clone(), rooms, body, rooms_timers).await;
             Ok(StatusCode::OK)
         }
         None => Err(warp::reject::custom(UserNotFound))
@@ -73,10 +73,10 @@ pub async fn room_chat_message_handler(room_id: String, body: SendMessageRequest
     }
 }
 
-pub async fn make_a_move_handler(room_id: String, body: PublishToARoomRequest, rooms: RoomList, user_id_opt: Option<usize>) -> Result<impl Reply> {
+pub async fn make_a_move_handler(room_id: String, body: PublishToARoomRequest, rooms: RoomList, user_id_opt: Option<usize>, rooms_timers: RoomTimersList) -> Result<impl Reply> {
     match user_id_opt {
         Some(user_id) => {
-            make_a_move(room_id.clone(), user_id.clone(), rooms, body).await?;
+            make_a_move(room_id.clone(), user_id.clone(), rooms_timers, rooms, body).await?;
             Ok(StatusCode::OK)
         }
         None => Err(warp::reject::custom(UserNotFound))
@@ -244,7 +244,7 @@ async fn create_room(room_id: String, user_id: usize, room_name: String, rooms: 
     desc
 }
 
-async fn make_a_move(room_id: String, user_id: usize, rooms: RoomList, request: PublishToARoomRequest) -> Result<&'static str> {
+async fn make_a_move(room_id: String, user_id: usize, rooms_timers: RoomTimersList, rooms: RoomList, request: PublishToARoomRequest) -> Result<&'static str> {
     info!("Make a move, room: {}, user_id: {}, message: {:?}", room_id, user_id, request);
     if request.path.len() < 2 {
         error!("Path too short.");
@@ -266,6 +266,11 @@ async fn make_a_move(room_id: String, user_id: usize, rooms: RoomList, request: 
                 info!("Player {} can make a move.", ind);
                 match r.make_a_move(transformed, user_id) {
                     Ok(msg) => {
+                        if !msg.game_finished {
+                            start_timer(rooms, rooms_timers, 30, room_id);
+                        } else {
+                            cancel_timer(rooms_timers, room_id);
+                        }
                         send_update(r, &msg);
                         r.last_updated = Instant::now();
                         break;
@@ -285,7 +290,7 @@ async fn make_a_move(room_id: String, user_id: usize, rooms: RoomList, request: 
     Ok("ok")
 }
 
-async fn update_room_state(room_id: String, user_id: usize, rooms: RoomList, request: UpdateRoomStateRequest) {
+async fn update_room_state(room_id: String, user_id: usize, rooms: RoomList, request: UpdateRoomStateRequest, rooms_timers: RoomTimersList) {
     info!("Update room state: {}, user_id: {}, message: {:?}", room_id, user_id, request);
     if let Some(r) = rooms.clone().write().unwrap().get_mut(&room_id) {
         info!("Found the room: {}, created_by {} at {:?}", r.name, r.created_by, r.created_time);
@@ -293,6 +298,9 @@ async fn update_room_state(room_id: String, user_id: usize, rooms: RoomList, req
             Start | Stop => {
                 if r.created_by == user_id && r.players.iter().all(|p| { p.ready }) {
                     r.game_started = request.update_type == Start;
+                    if r.game_started {
+                        start_timer(rooms.clone(), rooms_timers, 30, room_id);
+                    }
                     send_update(r, &RoomStateUpdate::new(r));
                 } else {
                     error!("Cannot start game for room {:?}.", r)

@@ -32,6 +32,7 @@
   let socket: EventSource;
   let moves: Move[] = [];
   let next_player_to_move = 0;
+  let timer = 30;
   let my_color: number;
   let ready: boolean;
   let everyone_ready: boolean;
@@ -113,15 +114,27 @@
     console.log("Data: ", update);
     const { name } = update;
     switch (name) {
+      case "move_timer": {
+        let {user_id, timer_value} = update;
+        timer = timer_value
+        next_player_to_move = user_id % players.length;
+        break;
+      }
+      case "turn_change": {
+        let {turn_goes_to} = update;
+        next_player_to_move = turn_goes_to % players.length;
+        timer = 30;
+        break;
+      }
       case "chat_message": {
-        const { ready, user_id } = update;
+        const {ready, user_id} = update;
         if (ready) {
           const ind = players.findIndex((p) => p.user_id === user_id);
           if (ind >= 0) {
             const player = players[ind];
             players = [
               ...players.slice(0, ind),
-              { ...player, ready: true },
+              {...player, ready: true},
               ...players.slice(ind + 1),
             ];
           }
@@ -208,6 +221,7 @@
         if (game_finished) {
           room_state = { ...room_state, game_finished, winner: by_user_id };
         }
+        timer = 30;
         break;
       case "room_state_update":
         const { room: r } = update as { room: RoomDesc };
@@ -395,12 +409,12 @@
       {cones}
       {selectedCones}
       game_started={room_state.game_started}
-      my_move={getNextPlayer(players, next_player_to_move)?.user_id == $userId} />
+      my_move={getNextPlayer(players, next_player_to_move)?.user_id === $userId} />
     <div class="controls">
       {#if !connected}
         <section>Connecting to server...</section>
       {/if}
-      {#if +$userId == room_state.created_by}
+      {#if +$userId === room_state.created_by}
         <!-- svelte-ignore empty-block -->
         {#if !room_state.game_started && !room_state.game_finished}
           <button
@@ -409,13 +423,14 @@
         {:else if !room_state.game_started}{/if}
       {/if}
       {#if room_state.game_started && !room_state.game_finished}
-        {#if getNextPlayer(players, next_player_to_move)?.user_id == $userId}
+        {#if getNextPlayer(players, next_player_to_move)?.user_id === $userId}
           <h3>Your move!</h3>
+          <h4>{timer} seconds left.</h4>
         {:else}
           <p>
             Waiting for
             {getNextPlayer(players, next_player_to_move)?.name}
-            to make a move
+            to make a move. He has {timer} more seconds.
           </p>
         {/if}
         <div class="line">

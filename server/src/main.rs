@@ -1,22 +1,23 @@
+use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
 use std::env;
+use std::ops::Add;
 use std::sync::{Arc, RwLock};
-use std::sync::atomic::{AtomicUsize};
+use std::sync::atomic::AtomicUsize;
 
+use futures::future::{abortable, AbortHandle};
+use log::{error, info};
 use lru_time_cache::LruCache;
+use serde::de::DeserializeOwned;
+use tokio::time::{Duration, Instant};
 use warp::{Filter, Rejection};
 
-use model::RoomDesc;
-use serde::de::DeserializeOwned;
 use model::{RoomHandle, User};
-use tokio::time::{Duration, Instant};
-use std::ops::Add;
-use log::{info,error};
-use crate::model::{Player, Message, MoveTimerUpdate, TurnChangeUpdate};
-use crate::ws::{send_update, PlayerLeftUpdate};
-use std::cmp::max;
-use tokio::task::JoinHandle;
+use model::RoomDesc;
+
+use crate::model::{Message, MoveTimerUpdate, Player, TurnChangeUpdate};
+use crate::ws::{PlayerLeftUpdate, send_update};
 
 mod handler;
 mod ws;
@@ -26,12 +27,13 @@ mod model;
 const HOST: &str = "127.0.0.1";
 const PORT: usize = 8000;
 const USER_TOKEN_HEADER: &str = "X-User-Token";
-const ROOM_TTL_SEC: u64 = 60;
+const ROOM_TTL_SEC: u64 = 600;
 const PLAYER_TTL_SEC: u64 = 40;
 
 
 type Result<T> = std::result::Result<T, Rejection>;
 type RoomList = Arc<RwLock<HashMap<String, RoomHandle>>>;
+type RoomTimersList = Arc<RwLock<HashMap<String, AbortHandle>>>;
 type UserTokens = Arc<RwLock<LruCache<String, User>>>;
 
 
@@ -45,26 +47,42 @@ where T: DeserializeOwned + Send {
         .and(with_userid(users))
 }
 
-fn start_timer(rooms: RoomList, timeout: usize, user_id: usize, room_id: String) -> JoinHandle<()> {
+fn start_timer(rooms: RoomList, room_timers: RoomTimersList, timeout: usize, room_id: String) {
     let mut interval = tokio::time::interval_at(Instant::now().add(Duration::from_secs(1)), Duration::from_secs(1));
-    tokio::spawn( async move {
+    let local_room_id = room_id.clone();
+    if let Some(handle) = room_timers.clone().write().unwrap().remove(room_id.as_str()) {
+        handle.abort()
+    }
+    let new_handle = async move {
         let mut i = timeout;
         let local_rooms = rooms.clone();
         loop {
             interval.tick().await;
             i -= 1;
-            if let Some(r) = local_rooms.read().unwrap().get(room_id.as_str()) {
+            if let Some(mut r) = local_rooms.write().unwrap().get_mut(local_room_id.as_str()) {
+                let user_id = r.active_player;
                 send_update(r, &MoveTimerUpdate::new(i, user_id));
                 if i <= 0 {
-                    send_update(r, &TurnChangeUpdate::new(RoomHandle::next_player(r.active_player, r.players.len())));
-                    break
+                    let next_player = RoomHandle::next_player(r.active_player, r.players.len());
+                    r.active_player = next_player.clone();
+                    send_update(r, &TurnChangeUpdate::new(next_player));
+                    i = timeout;
                 }
             } else {
-                error!("Could not find room {}", room_id);
-                break
+                error!("Could not find room {}", local_room_id);
+                break;
             }
         }
-    })
+    };
+    let ab = abortable(new_handle);
+    tokio::spawn(ab.0);
+    room_timers.clone().write().unwrap().insert(room_id, ab.1);
+}
+
+fn cancel_timer(room_timers: RoomTimersList, room_id: String) {
+    if let Some(handle) = room_timers.clone().write().unwrap().remove(room_id.as_str()) {
+        handle.abort()
+    }
 }
 
 #[tokio::main]
@@ -72,12 +90,14 @@ async fn main() {
     env::set_var("RUST_LOG", "info");
     env_logger::init();
     let rooms = Arc::new(RwLock::new(HashMap::new()));
+    let room_timers: RoomTimersList = Arc::new(RwLock::new(HashMap::new()));
     let users_count = Arc::new(AtomicUsize::new(0));
     let time_to_live = ::std::time::Duration::from_secs(3600 * 24);
     let users: UserTokens = Arc::new(RwLock::new(LruCache::<String, User>::with_expiry_duration(time_to_live)));
     let health_route = warp::path!("health").and_then(handler::health_handler);
     let mut interval = tokio::time::interval_at(Instant::now().add(Duration::from_secs(ROOM_TTL_SEC)), Duration::from_secs(ROOM_TTL_SEC));
     let rooms_cloned = rooms.clone();
+    let rooms_timers_cloned = rooms.clone();
     tokio::spawn( async move {
         loop {
             interval.tick().await;
@@ -87,6 +107,8 @@ async fn main() {
                     let last_updated: Duration = std::time::Instant::now() - room.last_updated;
                     room.players.len() != 0 || last_updated < Duration::from_secs(ROOM_TTL_SEC)
                 });
+
+                rooms_timers_cloned.clone().write().unwrap().retain(|k, _| { rs.contains_key(k) });
 
                 for (_, handler) in rs.iter_mut() {
                     for p in handler.players.iter_mut() {
@@ -177,9 +199,14 @@ async fn main() {
             .and(with_rooms(rooms.clone()))
             .and_then(handler::get_rooms_handler));
 
-    let room_messages_routes = create_default_path(room_moves, rooms.clone(), users.clone()).and_then(handler::make_a_move_handler);
+    let room_messages_routes = create_default_path(room_moves, rooms.clone(), users.clone())
+        .and(with_rooms_timers(room_timers.clone()))
+        .and_then(handler::make_a_move_handler);
 
-    let room_updates_routes = create_default_path(room_updates, rooms.clone(), users.clone()).and_then(handler::update_room_state_handler);
+    let room_updates_routes = create_default_path(room_updates, rooms.clone(), users.clone())
+        .and(with_rooms_timers(room_timers.clone()))
+        .and_then(handler::update_room_state_handler);
+
     let room_chat_routes = warp::path(room_messages)
         .and(warp::post())
         .and(warp::path::param())
@@ -232,6 +259,10 @@ async fn main() {
 
 fn with_rooms(rooms: RoomList) -> impl Filter<Extract=(RoomList, ), Error=Infallible> + Clone {
     warp::any().map(move || rooms.clone())
+}
+
+fn with_rooms_timers(rooms_timers: RoomTimersList) -> impl Filter<Extract=(RoomTimersList, ), Error=Infallible> + Clone {
+    warp::any().map(move || rooms_timers.clone())
 }
 
 fn with_users(users: UserTokens) -> impl Filter<Extract=(UserTokens, ), Error=Infallible> + Clone {
