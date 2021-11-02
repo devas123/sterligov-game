@@ -13,21 +13,21 @@
         fill: hsl(216, 100%, 50%);
     }
     .red {
-        fill: red;
+        fill: #a23131;
     }
     .yellow {
-        fill: yellow;
+        fill: #d5d500;
     }
     .orange {
-        fill: orange;
+        fill: #e39821;
     }
     .green {
-        fill: greenyellow;
+        fill: #6c9629;
     }
     .opaque {
-        opacity: 20%;
+        opacity: 40%;
         fill: white;
-        stroke: black;
+        stroke: #262626;
         stroke-width: 1px;
     }
 </style>

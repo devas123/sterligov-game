@@ -97,7 +97,7 @@ async fn main() {
     let health_route = warp::path!("health").and_then(handler::health_handler);
     let mut interval = tokio::time::interval_at(Instant::now().add(Duration::from_secs(ROOM_TTL_SEC)), Duration::from_secs(ROOM_TTL_SEC));
     let rooms_cloned = rooms.clone();
-    let rooms_timers_cloned = rooms.clone();
+    let rooms_timers_cloned = room_timers.clone();
     tokio::spawn( async move {
         loop {
             interval.tick().await;
