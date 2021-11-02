@@ -16,7 +16,7 @@
         fill: #a23131;
     }
     .yellow {
-        fill: #d5d500;
+        fill: #b2b200;
     }
     .orange {
         fill: #e39821;
@@ -25,7 +25,7 @@
         fill: #6c9629;
     }
     .opaque {
-        opacity: 40%;
+        opacity: 50%;
         fill: white;
         stroke: #262626;
         stroke-width: 1px;
