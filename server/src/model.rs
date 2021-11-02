@@ -1,3 +1,4 @@
+use std::cmp::max;
 use std::time::Instant;
 use crate::game::GameState;
 use tokio::sync::mpsc;
@@ -118,7 +119,7 @@ impl RoomStateUpdate {
 
 impl RoomHandle {
     pub fn next_player(player: usize, total_players: usize) -> usize {
-        return (player + 1) % total_players;
+        return (player + 1) % max(total_players, 1);
     }
     pub fn make_a_move(&mut self, path: Vec<(i32, i32)>, user_id: usize) -> std::result::Result<RoomUpdate, usize> {
         if let Some(gs) = self.game_state.as_mut() {

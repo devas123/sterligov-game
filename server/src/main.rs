@@ -234,6 +234,7 @@ async fn main() {
                             "Sec-Fetch-Mode",
                             "Sec-Fetch-Site"
         ]);
+
     let routes = health_route
         .or(room_handle_routes)
         .or(room_messages_routes)
@@ -254,8 +255,10 @@ async fn main() {
         .with(warp::log::log("tests"));
 
 
+
     warp::serve(routes).run(([127, 0, 0, 1], PORT as u16)).await;
 }
+
 
 fn with_rooms(rooms: RoomList) -> impl Filter<Extract=(RoomList, ), Error=Infallible> + Clone {
     warp::any().map(move || rooms.clone())
